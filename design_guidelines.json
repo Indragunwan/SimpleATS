@@ -1,0 +1,108 @@
+{
+  "project_context": {
+    "name": "Sistem Penapisan CV Berbasis AI (Semantic CV Screening System)",
+    "type": "Enterprise HR Recruitment Dashboard",
+    "target_audience": "HR Recruiters, Hiring Managers, IT Admins",
+    "language": "Bahasa Indonesia"
+  },
+  "theme_and_archetype": {
+    "theme": "Light",
+    "archetype": "Archetype 4: Swiss & High-Contrast",
+    "rationale": "HR enterprise tools require extreme objectivity, data clarity, and functional layout. The Swiss archetype removes unnecessary decorative elements (like AI slop gradients) and relies on strict grids, high contrast typography, and color-as-function to display complex CV scoring data without visual fatigue.",
+    "vibe": "Objective, rigid, highly functional, trustworthy, and data-dense."
+  },
+  "typography": {
+    "rules": [
+      "NO INTER FOR HEADINGS. NEVER.",
+      "Headings: Use 'Satoshi' or 'Cabinet Grotesk' for a clean, structural, authoritative feel.",
+      "Body/Data tables: Use 'IBM Plex Sans' for maximum readability of dense textual information, dates, and numbers.",
+      "Typesetting: Use tight letter spacing (tracking-tight) for headings. Large numbers (scores) must be tabular or fixed-width.",
+      "Hierarchy: Enforce strict step scales. E.g., H1 text-3xl, H2 text-xl, Table text text-sm."
+    ],
+    "font_families": {
+      "heading": "font-sans (Setup Satoshi or Cabinet Grotesk)",
+      "body": "font-mono or specific sans (Setup IBM Plex Sans)"
+    }
+  },
+  "colors": {
+    "philosophy": "Color is Function Only. 95% of the UI should be monochrome. Color exists only to guide action and indicate AI matching scores.",
+    "palette": {
+      "background": "bg-zinc-50 (Neutral tinted grey, avoids stark white strain)",
+      "surface": "bg-white (For cards, tables, panels)",
+      "text_primary": "text-zinc-900 (Deepest contrast)",
+      "text_secondary": "text-zinc-500 (For table headers, metadata)",
+      "border": "border-zinc-200 (Subtle structural lines)",
+      "primary_action": "bg-zinc-900 hover:bg-zinc-800 text-white (Swiss high-contrast CTA)"
+    },
+    "score_semantics": {
+      "high_match": {
+        "range": "75 - 100",
+        "text": "text-emerald-700",
+        "bg": "bg-emerald-50",
+        "border": "border-emerald-200"
+      },
+      "mid_match": {
+        "range": "40 - 74",
+        "text": "text-amber-700",
+        "bg": "bg-amber-50",
+        "border": "border-amber-200"
+      },
+      "low_match": {
+        "range": "0 - 39",
+        "text": "text-rose-700",
+        "bg": "bg-rose-50",
+        "border": "border-rose-200"
+      }
+    },
+    "forbidden": [
+      "Purple gradients (#9D4CDD)",
+      "Teal green (#1B93A4)",
+      "Any 'AI slop' neon aesthetics"
+    ]
+  },
+  "layout_and_spacing": {
+    "dashboard_grid": "MODE B: THE 'CONTROL ROOM' GRID. Use grid-cols-1 md:grid-cols-3 lg:grid-cols-4 with tight gaps (gap-4 or gap-6). Use h-full to stretch children. No jagged bottoms.",
+    "ats_table": "Scan-first, table-dominant layout. Sticky headers, right-aligned numeric fields, progressive disclosure (expand row for AI rationale snippet), and zebra striping (bg-zinc-50/50 on even rows).",
+    "candidate_detail": "Bento-style layout. Top bar: Candidate Identity & Global Actions. Left col (span 1): Radar chart and 5-dimension score breakdown. Middle col (span 2): Extracted CV profile (experience, education). Right col (span 1): Narrative AI rationale (strengths, gaps, recommendation).",
+    "surfaces": "Grid Borders (The 'Technical' Look). Expose the skeleton. Use flat backgrounds with 1px subtle borders (border-zinc-200). Use very subtle shadows (shadow-sm) only on hover."
+  },
+  "components_strategy": {
+    "general": "Use pure HTML/Tailwind for structural page layouts. Heavily customize Shadcn components (Tables, Dialogs, Select, Forms, Progress, Badges) by stripping 'Vercel-look' radii and adopting sharper edges (rounded-sm or rounded-none).",
+    "charts": "Use Recharts (or Shadcn Chart wrappers). Specifically need RadarChart for 5-dimension CV scoring, and BarCharts for score distributions in the dashboard.",
+    "icons": "Use Phosphor Icons (yarn add @phosphor-icons/react) for a dense, professional tech look. Alternatives: lucide-react (already installed).",
+    "batch_upload": "Drag-drop area with a 'Grid Borders' dash pattern. Clear list of files with Status badges (Pending, Processing, Parsed, Failed).",
+    "ai_rationale_panel": "Design as a distinct 'insights' panel. Background zinc-50, border-l-2 border-zinc-900. Use typography hierarchy to clearly delineate Strengths vs Gaps."
+  },
+  "testing_and_accessibility": {
+    "data_testid_rules": [
+      "CRITICAL: All interactive and key informational elements MUST include a data-testid attribute.",
+      "Convention: kebab-case, role-based. DO NOT use appearance-based IDs.",
+      "Examples: data-testid='login-submit-button', data-testid='candidate-score-badge', data-testid='upload-cv-dropzone', data-testid='jd-status-dropdown', data-testid='ai-rationale-text'"
+    ],
+    "contrast": "Ensure minimum 4.5:1 ratio. Hover states must explicitly set text color (e.g., hover:bg-zinc-900 hover:text-white)."
+  },
+  "media_and_images": {
+    "image_urls": {
+      "login_background": {
+        "url": "https://static.prod-images.emergentagent.com/jobs/57dafff3-9277-4df6-9ac8-0567f8fd084f/images/ee4b6ce41eeaac837c5e44926f26547279b9247dc76e6f0bc95ce264069b0e89.png",
+        "description": "Minimalist abstract Swiss design background for enterprise login screen. Clean geometric shapes, light grey and white base with a single sharp red architectural accent line.",
+        "usage": "Use as the background cover image on the left/right split of the Auth/Login screen."
+      },
+      "default_avatar": {
+        "url": "https://images.unsplash.com/photo-1758518731468-98e90ffd7430?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2ODl8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBjb3Jwb3JhdGUlMjB0ZWFtJTIwYXZhdGFyfGVufDB8fHx8MTc3OTkzNzczMnww&ixlib=rb-4.1.0&q=85",
+        "description": "Professional team avatar image.",
+        "usage": "Use as fallback avatar for users and candidates in tables and profile pages if needed."
+      }
+    },
+    "rules": "Never use placeholder images. If no candidate photo exists, generate an initials-based avatar (e.g., 'AB' in a circle) with a solid background."
+  },
+  "instructions_to_main_agent": [
+    "Write standard JavaScript (.js/.jsx) files. DO NOT use TypeScript (.tsx).",
+    "Set up exact routing: Login -> Role check -> Dashboard, JD List/Detail, Candidate Ranking per Position, Candidate Detail, Admin Provider Config, Admin User Management.",
+    "Implement the 'Control Room' grid layout for the candidate detail page to handle the dense amount of data.",
+    "Apply the score_semantics directly into component logic. Calculate total score and map strictly to the High (emerald), Mid (amber), Low (rose) classes.",
+    "Ensure all Bahasa Indonesia text uses professional formal HR vocabulary (e.g., 'Kandidat', 'Penapisan', 'Unggah', 'Daftar Pendek').",
+    "Integrate the login_background URL efficiently into the Login screen.",
+    "Add 'data-testid' to every single button, form input, table row, tab trigger, and major informational block."
+  ]
+}
