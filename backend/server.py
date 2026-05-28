@@ -1,89 +1,675 @@
-from fastapi import FastAPI, APIRouter
-from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
+"""Sistem Penapisan CV Berbasis AI — FastAPI Backend."""
+import asyncio
 import logging
-from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
-import uuid
+import os
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
 
+from dotenv import load_dotenv
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
+from motor.motor_asyncio import AsyncIOMotorClient
+from starlette.middleware.cors import CORSMiddleware
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / ".env")
+
+from ai_service import (  # noqa: E402
+    calculate_total_score,
+    call_llm,
+    evaluate_match,
+    extract_jd_criteria,
+    parse_cv,
+    recommendation_from_score,
+)
+from auth import (  # noqa: E402
+    create_access_token,
+    get_current_user,
+    hash_password,
+    require_roles,
+    verify_password,
+)
+from file_parser import extract_text  # noqa: E402
+from models import (  # noqa: E402
+    AIProviderUpdate,
+    DecisionUpdate,
+    JobPostingCreate,
+    JobPostingUpdate,
+    LoginRequest,
+    LoginResponse,
+    TestConnectionRequest,
+    UserCreate,
+    UserOut,
+    UserUpdate,
+)
+from seed import seed_default_ai_config, seed_demo_users  # noqa: E402
 
 # MongoDB connection
-mongo_url = os.environ['MONGO_URL']
+mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[os.environ["DB_NAME"]]
 
-# Create the main app without a prefix
-app = FastAPI()
+app = FastAPI(title="Sistem Penapisan CV Berbasis AI")
+api = APIRouter(prefix="/api")
 
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("cv-screening")
 
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+def _clean(doc: dict) -> dict:
+    if doc and "_id" in doc:
+        doc = {k: v for k, v in doc.items() if k != "_id"}
+    return doc
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
 
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
+async def _get_active_ai_config() -> dict:
+    cfg = await db.ai_provider_configs.find_one({"is_active": True}, {"_id": 0})
+    if not cfg:
+        cfg = {
+            "provider_type": "emergent",
+            "llm_provider": "anthropic",
+            "model_name": "claude-sonnet-4-6",
+            "temperature": 0.2,
+            "max_tokens": 4000,
+        }
+    return cfg
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+# ============ STARTUP ============
+@app.on_event("startup")
+async def on_startup() -> None:
+    await seed_demo_users(db)
+    await seed_default_ai_config(db)
+    logger.info("Startup complete")
 
-# Include the router in the main app
-app.include_router(api_router)
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    client.close()
+
+
+# ============ HEALTH ============
+@api.get("/health")
+async def health() -> dict:
+    db_ok = False
+    try:
+        await db.command("ping")
+        db_ok = True
+    except Exception:
+        pass
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "database": db_ok,
+        "ai_provider": bool(os.environ.get("EMERGENT_LLM_KEY")),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ============ AUTH ============
+@api.post("/auth/login", response_model=LoginResponse)
+async def login(payload: LoginRequest) -> LoginResponse:
+    user = await db.users.find_one({"email": payload.email.lower()}, {"_id": 0})
+    if not user or not user.get("is_active", True):
+        raise HTTPException(status_code=401, detail="Email atau kata sandi salah")
+    if not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Email atau kata sandi salah")
+    token = create_access_token(user["id"], user["role"], user["email"])
+    return LoginResponse(
+        access_token=token,
+        user=UserOut(
+            id=user["id"],
+            name=user["name"],
+            email=user["email"],
+            role=user["role"],
+            is_active=user.get("is_active", True),
+            created_at=user["created_at"],
+        ),
+    )
+
+
+@api.get("/auth/me", response_model=UserOut)
+async def me(user: dict = Depends(get_current_user)) -> UserOut:
+    doc = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+    return UserOut(**{k: doc[k] for k in ("id", "name", "email", "role", "is_active", "created_at")})
+
+
+# ============ USER MANAGEMENT (Admin) ============
+@api.get("/users", response_model=list[UserOut])
+async def list_users(user: dict = Depends(require_roles("admin_it"))) -> list[UserOut]:
+    docs = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    return [UserOut(**d) for d in docs]
+
+
+@api.post("/users", response_model=UserOut)
+async def create_user(
+    payload: UserCreate, user: dict = Depends(require_roles("admin_it"))
+) -> UserOut:
+    if payload.role not in ("hr_recruiter", "hiring_manager", "admin_it"):
+        raise HTTPException(400, "Role tidak valid")
+    existing = await db.users.find_one({"email": payload.email.lower()})
+    if existing:
+        raise HTTPException(400, "Email sudah terdaftar")
+    import uuid
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": payload.name,
+        "email": payload.email.lower(),
+        "password_hash": hash_password(payload.password),
+        "role": payload.role,
+        "is_active": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.insert_one(doc)
+    return UserOut(**{k: doc[k] for k in ("id", "name", "email", "role", "is_active", "created_at")})
+
+
+@api.patch("/users/{user_id}", response_model=UserOut)
+async def update_user(
+    user_id: str,
+    payload: UserUpdate,
+    user: dict = Depends(require_roles("admin_it")),
+) -> UserOut:
+    update: dict = {}
+    if payload.name is not None:
+        update["name"] = payload.name
+    if payload.role is not None:
+        if payload.role not in ("hr_recruiter", "hiring_manager", "admin_it"):
+            raise HTTPException(400, "Role tidak valid")
+        update["role"] = payload.role
+    if payload.is_active is not None:
+        update["is_active"] = payload.is_active
+    if payload.password:
+        update["password_hash"] = hash_password(payload.password)
+    if not update:
+        raise HTTPException(400, "Tidak ada perubahan")
+    res = await db.users.find_one_and_update(
+        {"id": user_id}, {"$set": update}, return_document=True
+    )
+    if not res:
+        raise HTTPException(404, "User tidak ditemukan")
+    res = _clean(res)
+    return UserOut(**{k: res[k] for k in ("id", "name", "email", "role", "is_active", "created_at")})
+
+
+# ============ JOB POSTINGS ============
+@api.post("/jobs")
+async def create_job(
+    title: str = Form(...),
+    department: str = Form(""),
+    raw_jd_text: str = Form(""),
+    file: Optional[UploadFile] = File(None),
+    user: dict = Depends(require_roles("hr_recruiter", "hiring_manager", "admin_it")),
+) -> dict:
+    import uuid
+
+    text = raw_jd_text or ""
+    file_name = None
+    if file:
+        content = await file.read()
+        text = extract_text(file.filename or "jd.txt", content)
+        file_name = file.filename
+    if not text or len(text.strip()) < 20:
+        raise HTTPException(400, "Teks JD terlalu pendek atau kosong")
+
+    job_id = str(uuid.uuid4())
+    doc = {
+        "id": job_id,
+        "title": title,
+        "department": department,
+        "raw_jd_text": text,
+        "file_name": file_name,
+        "target_position": "",
+        "min_experience_years": 0,
+        "education_requirement": "",
+        "responsibilities": [],
+        "criteria": [],
+        "weights": {
+            "must_have": 40,
+            "experience": 30,
+            "domain": 15,
+            "education": 5,
+            "nice_have": 10,
+            "shortlist_threshold": 75,
+            "reject_threshold": 40,
+        },
+        "status": "draft",
+        "created_by": user["id"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "extraction_status": "processing",
+    }
+    await db.job_postings.insert_one(doc)
+
+    # Trigger extraction (sync but fast - LLM call ~5-15s)
+    try:
+        cfg = await _get_active_ai_config()
+        extracted = await extract_jd_criteria(text, cfg)
+        criteria = []
+        for v in extracted.get("must_have", []):
+            criteria.append({"type": "must", "category": "skill", "value": v})
+        for v in extracted.get("nice_to_have", []):
+            criteria.append({"type": "nice", "category": "skill", "value": v})
+        await db.job_postings.update_one(
+            {"id": job_id},
+            {
+                "$set": {
+                    "target_position": extracted.get("target_position", ""),
+                    "min_experience_years": extracted.get("min_experience_years", 0),
+                    "education_requirement": extracted.get("education_requirement", ""),
+                    "responsibilities": extracted.get("responsibilities", []),
+                    "criteria": criteria,
+                    "extraction_status": "done",
+                    "status": "active",
+                }
+            },
+        )
+    except Exception as e:
+        logger.exception("JD extraction failed")
+        await db.job_postings.update_one(
+            {"id": job_id},
+            {"$set": {"extraction_status": "failed", "extraction_error": str(e)}},
+        )
+
+    doc = await db.job_postings.find_one({"id": job_id}, {"_id": 0})
+    return doc
+
+
+@api.get("/jobs")
+async def list_jobs(user: dict = Depends(get_current_user)) -> list[dict]:
+    docs = await db.job_postings.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    # Attach candidate counts
+    for d in docs:
+        d["candidate_count"] = await db.screening_results.count_documents({"job_posting_id": d["id"]})
+    return docs
+
+
+@api.get("/jobs/{job_id}")
+async def get_job(job_id: str, user: dict = Depends(get_current_user)) -> dict:
+    doc = await db.job_postings.find_one({"id": job_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "JD tidak ditemukan")
+    return doc
+
+
+@api.patch("/jobs/{job_id}")
+async def update_job(
+    job_id: str,
+    payload: JobPostingUpdate,
+    user: dict = Depends(require_roles("hr_recruiter", "hiring_manager", "admin_it")),
+) -> dict:
+    update = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    if not update:
+        raise HTTPException(400, "Tidak ada perubahan")
+    res = await db.job_postings.find_one_and_update(
+        {"id": job_id}, {"$set": update}, return_document=True
+    )
+    if not res:
+        raise HTTPException(404, "JD tidak ditemukan")
+    return _clean(res)
+
+
+@api.post("/jobs/{job_id}/reextract")
+async def reextract_job(
+    job_id: str, user: dict = Depends(require_roles("hr_recruiter", "admin_it"))
+) -> dict:
+    job = await db.job_postings.find_one({"id": job_id})
+    if not job:
+        raise HTTPException(404, "JD tidak ditemukan")
+    cfg = await _get_active_ai_config()
+    extracted = await extract_jd_criteria(job["raw_jd_text"], cfg)
+    criteria = []
+    for v in extracted.get("must_have", []):
+        criteria.append({"type": "must", "category": "skill", "value": v})
+    for v in extracted.get("nice_to_have", []):
+        criteria.append({"type": "nice", "category": "skill", "value": v})
+    await db.job_postings.update_one(
+        {"id": job_id},
+        {
+            "$set": {
+                "target_position": extracted.get("target_position", ""),
+                "min_experience_years": extracted.get("min_experience_years", 0),
+                "education_requirement": extracted.get("education_requirement", ""),
+                "responsibilities": extracted.get("responsibilities", []),
+                "criteria": criteria,
+                "extraction_status": "done",
+            }
+        },
+    )
+    return await db.job_postings.find_one({"id": job_id}, {"_id": 0})
+
+
+# ============ CANDIDATES + SCREENING ============
+async def _process_candidate(candidate_id: str, job_id: str) -> None:
+    """Background task: parse CV + evaluate against JD."""
+    try:
+        cand = await db.candidates.find_one({"id": candidate_id})
+        if not cand:
+            return
+        cfg = await _get_active_ai_config()
+        # Parse CV
+        await db.candidates.update_one({"id": candidate_id}, {"$set": {"status": "processing"}})
+        parsed = await parse_cv(cand["raw_text"], cfg)
+        await db.candidates.update_one(
+            {"id": candidate_id},
+            {
+                "$set": {
+                    "name": parsed.get("name") or cand.get("name", "Unknown"),
+                    "email": parsed.get("email", ""),
+                    "phone": parsed.get("phone", ""),
+                    "parsed": parsed,
+                    "status": "parsed",
+                }
+            },
+        )
+        # Screen against JD
+        job = await db.job_postings.find_one({"id": job_id})
+        if not job:
+            return
+        jd_data = {
+            "target_position": job.get("target_position", ""),
+            "department": job.get("department", ""),
+            "min_experience_years": job.get("min_experience_years", 0),
+            "education_requirement": job.get("education_requirement", ""),
+            "responsibilities": job.get("responsibilities", []),
+            "must_have": [c["value"] for c in job.get("criteria", []) if c["type"] == "must"],
+            "nice_to_have": [c["value"] for c in job.get("criteria", []) if c["type"] == "nice"],
+        }
+        evaluation = await evaluate_match(jd_data, parsed, cfg)
+        weights = job.get("weights", {})
+        total = calculate_total_score(evaluation, weights)
+        recommendation = recommendation_from_score(total, weights)
+
+        import uuid
+
+        sr = {
+            "id": str(uuid.uuid4()),
+            "job_posting_id": job_id,
+            "candidate_id": candidate_id,
+            "total_score": total,
+            "must_have": evaluation["must_have"],
+            "experience": evaluation["experience"],
+            "domain": evaluation["domain"],
+            "education": evaluation["education"],
+            "nice_have": evaluation["nice_have"],
+            "recommendation": recommendation,
+            "rationale_summary": evaluation["rationale_summary"],
+            "strengths": evaluation["strengths"],
+            "gaps_summary": evaluation["gaps_summary"],
+            "decision": "pending",
+            "decided_by": None,
+            "decided_at": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.screening_results.insert_one(sr)
+    except Exception as e:
+        logger.exception("Candidate processing failed")
+        await db.candidates.update_one(
+            {"id": candidate_id},
+            {"$set": {"status": "failed", "error_message": str(e)}},
+        )
+
+
+@api.post("/jobs/{job_id}/upload-cv")
+async def upload_cv(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    files: list[UploadFile] = File(...),
+    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+) -> dict:
+    job = await db.job_postings.find_one({"id": job_id})
+    if not job:
+        raise HTTPException(404, "JD tidak ditemukan")
+    if len(files) > 500:
+        raise HTTPException(400, "Maksimum 500 CV per sesi")
+
+    import uuid
+
+    created_ids: list[str] = []
+    for f in files:
+        content = await f.read()
+        text = extract_text(f.filename or "cv.txt", content)
+        cid = str(uuid.uuid4())
+        doc = {
+            "id": cid,
+            "name": "Memproses...",
+            "email": "",
+            "phone": "",
+            "file_name": f.filename,
+            "raw_text": text,
+            "parsed": {},
+            "status": "pending",
+            "error_message": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "job_posting_id": job_id,
+        }
+        await db.candidates.insert_one(doc)
+        created_ids.append(cid)
+        background_tasks.add_task(_process_candidate, cid, job_id)
+
+    return {"uploaded": len(created_ids), "candidate_ids": created_ids}
+
+
+@api.get("/jobs/{job_id}/candidates")
+async def list_job_candidates(
+    job_id: str, user: dict = Depends(get_current_user)
+) -> list[dict]:
+    """Return ranked list of screening results joined with candidate info."""
+    results = await db.screening_results.find({"job_posting_id": job_id}, {"_id": 0}).to_list(1000)
+    # also include candidates still processing
+    candidates = await db.candidates.find({"job_posting_id": job_id}, {"_id": 0}).to_list(1000)
+    cand_map = {c["id"]: c for c in candidates}
+    scored_ids = {r["candidate_id"] for r in results}
+
+    out = []
+    for r in results:
+        c = cand_map.get(r["candidate_id"], {})
+        out.append(
+            {
+                **r,
+                "candidate_name": c.get("name", "Unknown"),
+                "candidate_email": c.get("email", ""),
+                "candidate_status": c.get("status", "parsed"),
+            }
+        )
+    out.sort(key=lambda x: x["total_score"], reverse=True)
+
+    # pending (no screening yet)
+    for c in candidates:
+        if c["id"] not in scored_ids:
+            out.append(
+                {
+                    "id": None,
+                    "job_posting_id": job_id,
+                    "candidate_id": c["id"],
+                    "candidate_name": c.get("name", "Memproses..."),
+                    "candidate_email": c.get("email", ""),
+                    "candidate_status": c.get("status", "pending"),
+                    "total_score": 0,
+                    "recommendation": "pending",
+                    "decision": "pending",
+                    "rationale_summary": "",
+                    "created_at": c["created_at"],
+                }
+            )
+    return out
+
+
+@api.get("/screenings/{screening_id}")
+async def get_screening(screening_id: str, user: dict = Depends(get_current_user)) -> dict:
+    sr = await db.screening_results.find_one({"id": screening_id}, {"_id": 0})
+    if not sr:
+        raise HTTPException(404, "Hasil screening tidak ditemukan")
+    cand = await db.candidates.find_one({"id": sr["candidate_id"]}, {"_id": 0})
+    job = await db.job_postings.find_one({"id": sr["job_posting_id"]}, {"_id": 0})
+    return {"screening": sr, "candidate": cand, "job": job}
+
+
+@api.patch("/screenings/{screening_id}/decision")
+async def update_decision(
+    screening_id: str,
+    payload: DecisionUpdate,
+    user: dict = Depends(require_roles("hr_recruiter", "hiring_manager", "admin_it")),
+) -> dict:
+    if payload.decision not in ("shortlisted", "rejected", "hold", "pending"):
+        raise HTTPException(400, "Keputusan tidak valid")
+    res = await db.screening_results.find_one_and_update(
+        {"id": screening_id},
+        {
+            "$set": {
+                "decision": payload.decision,
+                "decided_by": user["id"],
+                "decided_at": datetime.now(timezone.utc).isoformat(),
+            }
+        },
+        return_document=True,
+    )
+    if not res:
+        raise HTTPException(404, "Hasil screening tidak ditemukan")
+    return _clean(res)
+
+
+# ============ AI PROVIDER CONFIG ============
+@api.get("/config/ai-providers")
+async def list_providers(user: dict = Depends(require_roles("admin_it"))) -> list[dict]:
+    docs = await db.ai_provider_configs.find({}, {"_id": 0}).to_list(50)
+    for d in docs:
+        if d.get("api_key"):
+            d["api_key"] = "***" + d["api_key"][-4:] if len(d["api_key"]) > 4 else "***"
+    return docs
+
+
+@api.patch("/config/ai-providers/{cfg_id}")
+async def update_provider(
+    cfg_id: str,
+    payload: AIProviderUpdate,
+    user: dict = Depends(require_roles("admin_it")),
+) -> dict:
+    update = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    # If activating this one, deactivate others
+    if update.get("is_active"):
+        await db.ai_provider_configs.update_many(
+            {"id": {"$ne": cfg_id}}, {"$set": {"is_active": False}}
+        )
+    res = await db.ai_provider_configs.find_one_and_update(
+        {"id": cfg_id}, {"$set": update}, return_document=True
+    )
+    if not res:
+        raise HTTPException(404, "Konfigurasi tidak ditemukan")
+    res = _clean(res)
+    if res.get("api_key"):
+        res["api_key"] = "***" + res["api_key"][-4:] if len(res["api_key"]) > 4 else "***"
+    return res
+
+
+@api.post("/config/ai-providers")
+async def create_provider(
+    payload: AIProviderUpdate, user: dict = Depends(require_roles("admin_it"))
+) -> dict:
+    import uuid
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": payload.name or "Custom Provider",
+        "provider_type": payload.provider_type or "custom",
+        "base_url": payload.base_url or "",
+        "api_key": payload.api_key or "",
+        "llm_provider": payload.llm_provider or "openai",
+        "model_name": payload.model_name or "gpt-4o-mini",
+        "temperature": payload.temperature if payload.temperature is not None else 0.2,
+        "max_tokens": payload.max_tokens or 4000,
+        "is_active": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.ai_provider_configs.insert_one(doc)
+    out = {**doc}
+    if out.get("api_key"):
+        out["api_key"] = "***" + out["api_key"][-4:] if len(out["api_key"]) > 4 else "***"
+    return out
+
+
+@api.post("/config/ai-providers/test")
+async def test_provider(
+    payload: TestConnectionRequest, user: dict = Depends(require_roles("admin_it"))
+) -> dict:
+    try:
+        cfg = payload.model_dump()
+        result = await asyncio.wait_for(
+            call_llm(
+                "You are a connectivity test. Respond with the exact text: OK",
+                "Reply OK only.",
+                cfg,
+            ),
+            timeout=30,
+        )
+        return {"success": True, "response": result[:200]}
+    except Exception as e:
+        return {"success": False, "error": str(e)[:300]}
+
+
+# ============ DASHBOARD ============
+@api.get("/dashboard/stats")
+async def dashboard_stats(user: dict = Depends(get_current_user)) -> dict:
+    active_jobs = await db.job_postings.count_documents({"status": "active"})
+    total_jobs = await db.job_postings.count_documents({})
+    total_candidates = await db.candidates.count_documents({})
+    total_screenings = await db.screening_results.count_documents({})
+
+    today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    processed_today = await db.candidates.count_documents(
+        {"created_at": {"$regex": f"^{today_iso}"}}
+    )
+
+    # Score distribution
+    pipeline = [
+        {
+            "$bucket": {
+                "groupBy": "$total_score",
+                "boundaries": [0, 40, 75, 101],
+                "default": "other",
+                "output": {"count": {"$sum": 1}},
+            }
+        }
+    ]
+    dist_raw = await db.screening_results.aggregate(pipeline).to_list(10)
+    dist = {"low": 0, "mid": 0, "high": 0}
+    for b in dist_raw:
+        if b["_id"] == 0:
+            dist["low"] = b["count"]
+        elif b["_id"] == 40:
+            dist["mid"] = b["count"]
+        elif b["_id"] == 75:
+            dist["high"] = b["count"]
+
+    recent_jobs = await db.job_postings.find({}, {"_id": 0}).sort("created_at", -1).limit(5).to_list(5)
+
+    return {
+        "active_jobs": active_jobs,
+        "total_jobs": total_jobs,
+        "total_candidates": total_candidates,
+        "total_screenings": total_screenings,
+        "processed_today": processed_today,
+        "score_distribution": dist,
+        "recent_jobs": recent_jobs,
+    }
+
+
+app.include_router(api)
 
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
