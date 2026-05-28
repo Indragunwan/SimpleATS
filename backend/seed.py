@@ -69,3 +69,29 @@ async def seed_default_ai_config(db) -> None:
     }
     await db.ai_provider_configs.insert_one(doc)
     logger.info("Seeded default AI provider config (Emergent)")
+
+
+async def backfill_criteria_ids(db) -> None:
+    """Backfill missing id/weight fields on existing job criteria for backward compat."""
+    import uuid
+
+    updated = 0
+    async for job in db.job_postings.find({}, {"_id": 0, "id": 1, "criteria": 1}):
+        criteria = job.get("criteria") or []
+        if not criteria:
+            continue
+        changed = False
+        for c in criteria:
+            if "id" not in c or not c["id"]:
+                c["id"] = str(uuid.uuid4())
+                changed = True
+            if "weight" not in c:
+                c["weight"] = 3
+                changed = True
+        if changed:
+            await db.job_postings.update_one(
+                {"id": job["id"]}, {"$set": {"criteria": criteria}}
+            )
+            updated += 1
+    if updated:
+        logger.info(f"Backfilled criteria id/weight on {updated} job(s)")

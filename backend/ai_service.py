@@ -77,10 +77,11 @@ Output Anda WAJIB berupa JSON valid dengan struktur berikut (tanpa teks lain, ta
   "target_position": "Nama jabatan yang dicari",
   "department": "Departemen jika disebut, kosong jika tidak",
   "min_experience_years": <integer, minimum tahun pengalaman, 0 jika tidak disebut>,
-  "education_requirement": "Latar belakang pendidikan minimum yang diminta",
+  "education_level": "Jenjang minimum (SMA/SMK | D3 | D4 | S1 | S2 | S3). Kosong jika tidak disebut.",
+  "education_major": "Jurusan yang diminta, atau 'Semua jurusan' jika tidak spesifik. Kosong jika tidak disebut sama sekali.",
   "responsibilities": ["Tanggung jawab 1", "Tanggung jawab 2", ...],
-  "must_have": ["Keahlian/kualifikasi wajib 1", "Keahlian wajib 2", ...],
-  "nice_to_have": ["Keahlian tambahan 1", "Keahlian tambahan 2", ...]
+  "must_have": ["Keahlian/kualifikasi wajib 1", ...],
+  "nice_to_have": ["Keahlian tambahan 1", ...]
 }
 Gunakan Bahasa Indonesia untuk nilai field. Jangan hallucinate."""
 
@@ -89,11 +90,23 @@ async def extract_jd_criteria(jd_text: str, config: Optional[dict] = None) -> di
     user_msg = f"Ekstrak kriteria dari JD berikut:\n\n---\n{jd_text[:8000]}\n---\n\nKembalikan JSON saja."
     raw = await call_llm(JD_SYSTEM_PROMPT, user_msg, config)
     parsed = _extract_json(raw) or {}
+    edu_level = parsed.get("education_level", "") or ""
+    edu_major = parsed.get("education_major", "") or ""
+    # Build education_requirement string for backward compat
+    edu_req = ""
+    if edu_level and edu_major:
+        edu_req = f"{edu_level} - {edu_major}"
+    elif edu_level:
+        edu_req = edu_level
+    elif edu_major:
+        edu_req = edu_major
     return {
         "target_position": parsed.get("target_position", "") or "",
         "department": parsed.get("department", "") or "",
         "min_experience_years": int(parsed.get("min_experience_years", 0) or 0),
-        "education_requirement": parsed.get("education_requirement", "") or "",
+        "education_requirement": edu_req,
+        "education_level": edu_level,
+        "education_major": edu_major,
         "responsibilities": parsed.get("responsibilities", []) or [],
         "must_have": parsed.get("must_have", []) or [],
         "nice_to_have": parsed.get("nice_to_have", []) or [],
@@ -143,14 +156,21 @@ SCORING_SYSTEM_PROMPT = """Anda adalah evaluator rekrutmen senior yang objektif 
 Tugas Anda: nilai kesesuaian kandidat dengan Job Description menggunakan pemahaman SEMANTIK, bukan keyword matching.
 Contoh kesetaraan: 'Salary Administration' setara 'Payroll Specialist', 'People & Culture' setara 'HR'.
 
-Berikan penilaian per dimensi (skala 0-100) dengan penjelasan singkat dalam Bahasa Indonesia.
+PENTING — Untuk dimensi MUST-HAVE dan NICE-TO-HAVE, perhatikan kolom 'weight' pada tiap kriteria (skala 1-5).
+Bobot 5 = krusial, 3 = normal, 1 = ringan. Kriteria dengan bobot lebih tinggi WAJIB lebih mempengaruhi sub-skor.
+
+PENTING — Untuk dimensi EDUCATION, evaluasi dua sub-aspek terpisah:
+1. Jenjang pendidikan (mis. S1 vs S2) — bobot ditentukan di edu_level_pct
+2. Jurusan/major (mis. Akuntansi vs Teknik Industri) — bobot di edu_major_pct
+Jika 'education_major' adalah 'Semua jurusan' atau kosong, anggap jurusan kandidat selalu memenuhi (skor 100 untuk komponen jurusan).
+Hitung skor education = (skor_jenjang × edu_level_pct + skor_jurusan × edu_major_pct) / 100.
 
 Output WAJIB JSON valid (tanpa teks lain, tanpa markdown):
 {
   "must_have": {"score": <0-100>, "explanation": "...", "matched_points": ["..."], "gaps": ["..."]},
   "experience": {"score": <0-100>, "explanation": "...", "matched_points": ["..."], "gaps": ["..."]},
   "domain": {"score": <0-100>, "explanation": "...", "matched_points": ["..."], "gaps": ["..."]},
-  "education": {"score": <0-100>, "explanation": "...", "matched_points": ["..."], "gaps": ["..."]},
+  "education": {"score": <0-100>, "explanation": "...", "matched_points": ["..."], "gaps": ["..."], "level_score": <0-100>, "major_score": <0-100>},
   "nice_have": {"score": <0-100>, "explanation": "...", "matched_points": ["..."], "gaps": ["..."]},
   "rationale_summary": "Ringkasan keputusan 2-3 kalimat",
   "strengths": ["Kekuatan 1", "Kekuatan 2", "Kekuatan 3"],
@@ -164,14 +184,28 @@ async def evaluate_match(
     cv_data: dict,
     config: Optional[dict] = None,
 ) -> dict:
+    # Build weighted criteria text to make weights visible to LLM
+    must_with_weights = [
+        {"value": c.get("value", c) if isinstance(c, dict) else c,
+         "weight": (c.get("weight", 3) if isinstance(c, dict) else 3)}
+        for c in jd_data.get("must_have", [])
+    ]
+    nice_with_weights = [
+        {"value": c.get("value", c) if isinstance(c, dict) else c,
+         "weight": (c.get("weight", 3) if isinstance(c, dict) else 3)}
+        for c in jd_data.get("nice_to_have", [])
+    ]
     jd_summary = {
         "target_position": jd_data.get("target_position", ""),
         "department": jd_data.get("department", ""),
         "min_experience_years": jd_data.get("min_experience_years", 0),
-        "education_requirement": jd_data.get("education_requirement", ""),
+        "education_level": jd_data.get("education_level", "") or jd_data.get("education_requirement", ""),
+        "education_major": jd_data.get("education_major", "") or "Semua jurusan",
+        "edu_level_pct": jd_data.get("edu_level_pct", 70),
+        "edu_major_pct": jd_data.get("edu_major_pct", 30),
         "responsibilities": jd_data.get("responsibilities", []),
-        "must_have": jd_data.get("must_have", []),
-        "nice_to_have": jd_data.get("nice_to_have", []),
+        "must_have": must_with_weights,
+        "nice_to_have": nice_with_weights,
     }
     cv_summary = {
         "name": cv_data.get("name", ""),
@@ -194,12 +228,16 @@ async def evaluate_match(
 
     def _dim(key: str) -> dict:
         d = parsed.get(key, {}) or {}
-        return {
+        out = {
             "score": max(0, min(100, int(d.get("score", 0) or 0))),
             "explanation": d.get("explanation", "") or "",
             "matched_points": d.get("matched_points", []) or [],
             "gaps": d.get("gaps", []) or [],
         }
+        if key == "education":
+            out["level_score"] = max(0, min(100, int(d.get("level_score", out["score"]) or 0)))
+            out["major_score"] = max(0, min(100, int(d.get("major_score", out["score"]) or 0)))
+        return out
 
     return {
         "must_have": _dim("must_have"),

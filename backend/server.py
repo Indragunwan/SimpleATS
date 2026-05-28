@@ -42,7 +42,9 @@ from auth import (  # noqa: E402
 from file_parser import extract_text  # noqa: E402
 from models import (  # noqa: E402
     AIProviderUpdate,
+    CriterionInput,
     DecisionUpdate,
+    EducationUpdate,
     JobPostingCreate,
     JobPostingUpdate,
     LoginRequest,
@@ -52,7 +54,7 @@ from models import (  # noqa: E402
     UserOut,
     UserUpdate,
 )
-from seed import seed_default_ai_config, seed_demo_users  # noqa: E402
+from seed import seed_default_ai_config, seed_demo_users, backfill_criteria_ids  # noqa: E402
 
 # MongoDB connection
 mongo_url = os.environ["MONGO_URL"]
@@ -109,6 +111,7 @@ async def _get_ai_config_for_task(task: str) -> dict:
 async def on_startup() -> None:
     await seed_demo_users(db)
     await seed_default_ai_config(db)
+    await backfill_criteria_ids(db)
     logger.info("Startup complete")
 
 
@@ -253,6 +256,8 @@ async def create_job(
         "target_position": "",
         "min_experience_years": 0,
         "education_requirement": "",
+        "education_level": "",
+        "education_major": "",
         "responsibilities": [],
         "criteria": [],
         "weights": {
@@ -261,6 +266,8 @@ async def create_job(
             "domain": 15,
             "education": 5,
             "nice_have": 10,
+            "edu_level_pct": 70,
+            "edu_major_pct": 30,
             "shortlist_threshold": 75,
             "reject_threshold": 40,
         },
@@ -275,11 +282,13 @@ async def create_job(
     try:
         cfg = await _get_ai_config_for_task("parsing")
         extracted = await extract_jd_criteria(text, cfg)
+        import uuid as _u
+
         criteria = []
         for v in extracted.get("must_have", []):
-            criteria.append({"type": "must", "category": "skill", "value": v})
+            criteria.append({"id": str(_u.uuid4()), "type": "must", "category": "skill", "value": v, "weight": 3})
         for v in extracted.get("nice_to_have", []):
-            criteria.append({"type": "nice", "category": "skill", "value": v})
+            criteria.append({"id": str(_u.uuid4()), "type": "nice", "category": "skill", "value": v, "weight": 3})
         await db.job_postings.update_one(
             {"id": job_id},
             {
@@ -287,6 +296,8 @@ async def create_job(
                     "target_position": extracted.get("target_position", ""),
                     "min_experience_years": extracted.get("min_experience_years", 0),
                     "education_requirement": extracted.get("education_requirement", ""),
+                    "education_level": extracted.get("education_level", ""),
+                    "education_major": extracted.get("education_major", ""),
                     "responsibilities": extracted.get("responsibilities", []),
                     "criteria": criteria,
                     "extraction_status": "done",
@@ -348,11 +359,13 @@ async def reextract_job(
         raise HTTPException(404, "JD tidak ditemukan")
     cfg = await _get_ai_config_for_task("parsing")
     extracted = await extract_jd_criteria(job["raw_jd_text"], cfg)
+    import uuid as _u
+
     criteria = []
     for v in extracted.get("must_have", []):
-        criteria.append({"type": "must", "category": "skill", "value": v})
+        criteria.append({"id": str(_u.uuid4()), "type": "must", "category": "skill", "value": v, "weight": 3})
     for v in extracted.get("nice_to_have", []):
-        criteria.append({"type": "nice", "category": "skill", "value": v})
+        criteria.append({"id": str(_u.uuid4()), "type": "nice", "category": "skill", "value": v, "weight": 3})
     await db.job_postings.update_one(
         {"id": job_id},
         {
@@ -360,12 +373,119 @@ async def reextract_job(
                 "target_position": extracted.get("target_position", ""),
                 "min_experience_years": extracted.get("min_experience_years", 0),
                 "education_requirement": extracted.get("education_requirement", ""),
+                "education_level": extracted.get("education_level", ""),
+                "education_major": extracted.get("education_major", ""),
                 "responsibilities": extracted.get("responsibilities", []),
                 "criteria": criteria,
                 "extraction_status": "done",
             }
         },
     )
+    return await db.job_postings.find_one({"id": job_id}, {"_id": 0})
+
+
+# ============ JD CRITERIA CRUD ============
+@api.post("/jobs/{job_id}/criteria")
+async def add_criterion(
+    job_id: str,
+    payload: CriterionInput,
+    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+) -> dict:
+    if payload.type not in ("must", "nice"):
+        raise HTTPException(400, "Tipe harus 'must' atau 'nice'")
+    if not (1 <= payload.weight <= 5):
+        raise HTTPException(400, "Bobot harus 1-5")
+    if not payload.value.strip():
+        raise HTTPException(400, "Nilai kriteria tidak boleh kosong")
+    import uuid as _u
+
+    item = {
+        "id": str(_u.uuid4()),
+        "type": payload.type,
+        "category": payload.category or "skill",
+        "value": payload.value.strip(),
+        "weight": payload.weight,
+    }
+    res = await db.job_postings.update_one(
+        {"id": job_id}, {"$push": {"criteria": item}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "JD tidak ditemukan")
+    return item
+
+
+@api.patch("/jobs/{job_id}/criteria/{criterion_id}")
+async def update_criterion(
+    job_id: str,
+    criterion_id: str,
+    payload: CriterionInput,
+    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+) -> dict:
+    if payload.type not in ("must", "nice"):
+        raise HTTPException(400, "Tipe harus 'must' atau 'nice'")
+    if not (1 <= payload.weight <= 5):
+        raise HTTPException(400, "Bobot harus 1-5")
+    res = await db.job_postings.update_one(
+        {"id": job_id, "criteria.id": criterion_id},
+        {
+            "$set": {
+                "criteria.$.type": payload.type,
+                "criteria.$.category": payload.category or "skill",
+                "criteria.$.value": payload.value.strip(),
+                "criteria.$.weight": payload.weight,
+            }
+        },
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "Kriteria tidak ditemukan")
+    return {"status": "updated"}
+
+
+@api.delete("/jobs/{job_id}/criteria/{criterion_id}")
+async def delete_criterion(
+    job_id: str,
+    criterion_id: str,
+    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+) -> dict:
+    res = await db.job_postings.update_one(
+        {"id": job_id}, {"$pull": {"criteria": {"id": criterion_id}}}
+    )
+    if res.modified_count == 0:
+        raise HTTPException(404, "Kriteria tidak ditemukan")
+    return {"status": "deleted"}
+
+
+@api.patch("/jobs/{job_id}/education")
+async def update_education(
+    job_id: str,
+    payload: EducationUpdate,
+    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+) -> dict:
+    update: dict = {}
+    if payload.education_level is not None:
+        update["education_level"] = payload.education_level.strip()
+    if payload.education_major is not None:
+        update["education_major"] = payload.education_major.strip()
+    if payload.edu_level_pct is not None or payload.edu_major_pct is not None:
+        lvl = payload.edu_level_pct if payload.edu_level_pct is not None else 70
+        maj = payload.edu_major_pct if payload.edu_major_pct is not None else 100 - lvl
+        if lvl < 0 or maj < 0 or (lvl + maj) != 100:
+            raise HTTPException(400, "Bobot jenjang + jurusan harus berjumlah 100")
+        update["weights.edu_level_pct"] = lvl
+        update["weights.edu_major_pct"] = maj
+    # Refresh aggregate education_requirement string for legacy compat
+    if "education_level" in update or "education_major" in update:
+        job = await db.job_postings.find_one({"id": job_id}, {"_id": 0})
+        if not job:
+            raise HTTPException(404, "JD tidak ditemukan")
+        lvl = update.get("education_level", job.get("education_level", ""))
+        maj = update.get("education_major", job.get("education_major", ""))
+        update["education_requirement"] = (
+            f"{lvl} - {maj}" if lvl and maj and maj.lower() not in ("semua jurusan", "") else (lvl or maj or "")
+        )
+    res = await db.job_postings.update_one({"id": job_id}, {"$set": update})
+    if res.matched_count == 0:
+        raise HTTPException(404, "JD tidak ditemukan")
     return await db.job_postings.find_one({"id": job_id}, {"_id": 0})
 
 
@@ -381,17 +501,27 @@ async def _screen_candidate_for_job(
         return None
     if cfg is None:
         cfg = await _get_ai_config_for_task("scoring")
+    weights = job.get("weights", {})
     jd_data = {
         "target_position": job.get("target_position", ""),
         "department": job.get("department", ""),
         "min_experience_years": job.get("min_experience_years", 0),
         "education_requirement": job.get("education_requirement", ""),
+        "education_level": job.get("education_level", ""),
+        "education_major": job.get("education_major", ""),
+        "edu_level_pct": weights.get("edu_level_pct", 70),
+        "edu_major_pct": weights.get("edu_major_pct", 30),
         "responsibilities": job.get("responsibilities", []),
-        "must_have": [c["value"] for c in job.get("criteria", []) if c["type"] == "must"],
-        "nice_to_have": [c["value"] for c in job.get("criteria", []) if c["type"] == "nice"],
+        "must_have": [
+            {"value": c["value"], "weight": c.get("weight", 3)}
+            for c in job.get("criteria", []) if c["type"] == "must"
+        ],
+        "nice_to_have": [
+            {"value": c["value"], "weight": c.get("weight", 3)}
+            for c in job.get("criteria", []) if c["type"] == "nice"
+        ],
     }
     evaluation = await evaluate_match(jd_data, parsed, cfg)
-    weights = job.get("weights", {})
     total = calculate_total_score(evaluation, weights)
     recommendation = recommendation_from_score(total, weights)
 

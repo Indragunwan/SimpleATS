@@ -51,9 +51,11 @@ class LoginResponse(BaseModel):
 
 # ============ JOB POSTING ============
 class JDCriterion(BaseModel):
+    id: str = Field(default_factory=_new_id)
     type: str  # must | nice
-    category: str  # skill | experience | education | responsibility | language
+    category: str  # skill | experience | responsibility | language | certification | custom
     value: str
+    weight: int = 3  # 1=ringan, 3=normal, 5=krusial
 
 
 class ScoringWeights(BaseModel):
@@ -62,6 +64,9 @@ class ScoringWeights(BaseModel):
     domain: int = 15
     education: int = 5
     nice_have: int = 10
+    # Sub-weights inside the education dimension (must sum to 100)
+    edu_level_pct: int = 70  # bobot jenjang (S1/S2/dll)
+    edu_major_pct: int = 30  # bobot jurusan
     shortlist_threshold: int = 75
     reject_threshold: int = 40
 
@@ -81,7 +86,23 @@ class JobPostingUpdate(BaseModel):
     target_position: Optional[str] = None
     min_experience_years: Optional[int] = None
     education_requirement: Optional[str] = None
+    education_level: Optional[str] = None
+    education_major: Optional[str] = None
     responsibilities: Optional[list[str]] = None
+
+
+class CriterionInput(BaseModel):
+    type: str  # must | nice
+    category: str = "skill"
+    value: str
+    weight: int = 3
+
+
+class EducationUpdate(BaseModel):
+    education_level: Optional[str] = None
+    education_major: Optional[str] = None
+    edu_level_pct: Optional[int] = None
+    edu_major_pct: Optional[int] = None
 
 
 class JobPosting(BaseModel):
@@ -93,6 +114,8 @@ class JobPosting(BaseModel):
     target_position: str = ""
     min_experience_years: int = 0
     education_requirement: str = ""
+    education_level: str = ""
+    education_major: str = ""
     responsibilities: list[str] = Field(default_factory=list)
     criteria: list[JDCriterion] = Field(default_factory=list)
     weights: ScoringWeights = Field(default_factory=ScoringWeights)

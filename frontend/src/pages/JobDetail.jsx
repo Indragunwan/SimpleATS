@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ArrowLeft, Upload, RotateCw, Briefcase, Search, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import CriteriaEditor from "@/components/CriteriaEditor";
 
 export default function JobDetail() {
   const { id } = useParams();
@@ -79,8 +80,6 @@ export default function JobDetail() {
       (search === "" ||
         (c.candidate_name || "").toLowerCase().includes(search.toLowerCase()))
   );
-  const mustCriteria = (job.criteria || []).filter((c) => c.type === "must");
-  const niceCriteria = (job.criteria || []).filter((c) => c.type === "nice");
 
   return (
     <div className="p-10" data-testid="job-detail-page">
@@ -143,55 +142,27 @@ export default function JobDetail() {
         </div>
       </header>
 
-      {/* Criteria */}
+      {/* Criteria & Education Editor */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
-        <div className="bg-white border border-zinc-200 rounded-sm p-5 lg:col-span-2" data-testid="job-criteria">
-          <div className="text-xs uppercase tracking-wider text-zinc-500 mb-3">
-            Kriteria Wajib · Must-Have
-          </div>
-          <div className="flex flex-wrap gap-2 mb-5">
-            {mustCriteria.length === 0 ? (
-              <div className="text-sm text-zinc-400">Tidak ada kriteria wajib</div>
-            ) : (
-              mustCriteria.map((c, i) => (
-                <span
-                  key={i}
-                  className="text-xs px-2.5 py-1 rounded-sm border bg-emerald-50 text-emerald-700 border-emerald-200"
-                  data-testid={`must-criterion-${i}`}
-                >
-                  {c.value}
-                </span>
-              ))
-            )}
-          </div>
-          <div className="text-xs uppercase tracking-wider text-zinc-500 mb-3">
-            Kriteria Tambahan · Nice-to-Have
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {niceCriteria.length === 0 ? (
-              <div className="text-sm text-zinc-400">Tidak ada kriteria tambahan</div>
-            ) : (
-              niceCriteria.map((c, i) => (
-                <span
-                  key={i}
-                  className="text-xs px-2.5 py-1 rounded-sm border bg-zinc-50 text-zinc-700 border-zinc-200"
-                  data-testid={`nice-criterion-${i}`}
-                >
-                  {c.value}
-                </span>
-              ))
-            )}
-          </div>
+        <div className="lg:col-span-2">
+          <CriteriaEditor job={job} onUpdate={load} />
         </div>
 
-        <div className="bg-white border border-zinc-200 rounded-sm p-5" data-testid="job-meta">
+        <div className="bg-white border border-zinc-200 rounded-sm p-5 h-fit" data-testid="job-meta">
           <div className="space-y-3 text-sm">
             <Meta label="Min. Pengalaman" value={`${job.min_experience_years} tahun`} />
-            <Meta label="Pendidikan" value={job.education_requirement || "—"} />
             <Meta label="Status" value={job.status} />
             <Meta label="Bobot Must" value={`${job.weights?.must_have || 40}%`} />
             <Meta label="Bobot Pengalaman" value={`${job.weights?.experience || 30}%`} />
+            <Meta label="Bobot Domain" value={`${job.weights?.domain || 15}%`} />
+            <Meta label="Bobot Pendidikan" value={`${job.weights?.education || 5}%`} />
+            <Meta label="Bobot Nice" value={`${job.weights?.nice_have || 10}%`} />
             <Meta label="Threshold Shortlist" value={`≥ ${job.weights?.shortlist_threshold || 75}`} />
+          </div>
+          <div className="text-xs text-zinc-400 mt-3 pt-3 border-t border-zinc-200">
+            Setelah mengedit kriteria, klik <span className="font-medium text-zinc-700">Unggah CV</span> baru
+            atau gunakan <span className="font-medium text-zinc-700">Saran dari Pool</span> agar bobot baru
+            diterapkan ke scoring.
           </div>
         </div>
       </div>
