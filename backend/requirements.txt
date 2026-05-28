@@ -28,3 +28,4 @@ emergentintegrations==0.1.2
 lxml==6.1.1
 pypdf==6.12.2
 python-docx==1.2.0
+httpx>=0.24.0
