@@ -6,7 +6,10 @@ import re
 import uuid
 from typing import Any, Optional
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+# Note: emergentintegrations import removed to allow using other LLM providers.
+# The call_llm function below is pluggable — provide an async `llm_client` in
+# the `config` dict (callable) that accepts (system_message, user_message, config)
+# and returns a string response. Example: `config['llm_client'] = my_async_callable`.
 
 logger = logging.getLogger(__name__)
 
@@ -43,29 +46,34 @@ async def call_llm(
     config: Optional[dict] = None,
     session_id: Optional[str] = None,
 ) -> str:
-    """Call LLM. Uses Emergent Universal Key by default; supports custom OpenAI-compatible providers."""
+    """Pluggable LLM caller.
+
+    To use an LLM, provide `config['llm_client']` as an async callable with
+    signature `(system_message, user_message, config) -> str`.
+
+    Example usage in your application code:
+
+    async def my_llm_client(system, user, cfg):
+        # call your preferred provider and return text
+        return "..."
+
+    await call_llm(system, user, config={"llm_client": my_llm_client})
+    """
     config = config or {}
-    provider_type = config.get("provider_type", "emergent")
 
-    if provider_type == "emergent":
-        api_key = EMERGENT_KEY
-        llm_provider = config.get("llm_provider", "anthropic")
-        model_name = config.get("model_name", "claude-sonnet-4-6")
-    else:
-        # custom OpenAI-compatible provider via LlmChat
-        api_key = config.get("api_key") or EMERGENT_KEY
-        llm_provider = config.get("llm_provider", "openai")
-        model_name = config.get("model_name", "gpt-4o-mini")
+    llm_client = config.get("llm_client")
+    if llm_client and callable(llm_client):
+        # Expecting an async callable
+        resp = llm_client(system_message, user_message, config)
+        if hasattr(resp, "__await__"):
+            resp = await resp
+        return resp if isinstance(resp, str) else str(resp)
 
-    sid = session_id or f"cvscreen-{uuid.uuid4().hex[:8]}"
-    chat = LlmChat(
-        api_key=api_key,
-        session_id=sid,
-        system_message=system_message,
-    ).with_model(llm_provider, model_name)
-
-    response = await chat.send_message(UserMessage(text=user_message))
-    return response if isinstance(response, str) else str(response)
+    # If no client provided, give a clear error to guide the integrator.
+    raise RuntimeError(
+        "No LLM client configured. Provide an async callable under config['llm_client'] "
+        "that accepts (system_message, user_message, config) and returns a string."
+    )
 
 
 # ============ JD EXTRACTION ============
