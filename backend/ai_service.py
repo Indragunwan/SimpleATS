@@ -50,14 +50,6 @@ async def call_llm(
 
     To use an LLM, provide `config['llm_client']` as an async callable with
     signature `(system_message, user_message, config) -> str`.
-
-    Example usage in your application code:
-
-    async def my_llm_client(system, user, cfg):
-        # call your preferred provider and return text
-        return "..."
-
-    await call_llm(system, user, config={"llm_client": my_llm_client})
     """
     config = config or {}
 
@@ -69,11 +61,64 @@ async def call_llm(
             resp = await resp
         return resp if isinstance(resp, str) else str(resp)
 
-    # If no client provided, give a clear error to guide the integrator.
-    raise RuntimeError(
-        "No LLM client configured. Provide an async callable under config['llm_client'] "
-        "that accepts (system_message, user_message, config) and returns a string."
-    )
+    # Fallback to default LLM client
+    provider_type = config.get("provider_type", "emergent")
+    
+    if provider_type == "emergent":
+        # Default emergent provider uses Nvidia NIM API if key is available
+        nv_key = os.environ.get("NVIDIA_API_KEY") or os.environ.get("NIM_API_KEY") or os.environ.get("NVIDIA_NIM_API_KEY")
+        if nv_key:
+            api_key = nv_key
+            base_url = "https://integrate.api.nvidia.com/v1"
+            model_name = config.get("model_name") or "meta/llama-3.1-8b-instruct"
+        else:
+            # Fallback to Sumopod/Universal default
+            api_key = os.environ.get("SUMOPOD_API_KEY") or config.get("api_key") or EMERGENT_KEY
+            base_url = os.environ.get("SUMOPOD_BASE_URL") or config.get("base_url") or "https://ai.sumopod.com"
+            model_name = config.get("model_name") or "gpt-4o-mini"
+    else:
+        # Custom provider
+        api_key = config.get("api_key")
+        base_url = config.get("base_url") or "https://ai.sumopod.com"
+        model_name = config.get("model_name") or "gpt-4o-mini"
+
+    # Map model names for Nvidia compatibility if using Nvidia base_url
+    if base_url and "nvidia" in base_url.lower():
+        if "gpt" in model_name.lower() or "claude" in model_name.lower():
+            model_name = "meta/llama-3.1-8b-instruct"
+
+    if not api_key:
+        raise RuntimeError("No API key configured for LLM call.")
+
+    import httpx
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": user_message}
+        ],
+        "temperature": config.get("temperature", 0.2),
+        "max_tokens": config.get("max_tokens", 4000)
+    }
+    
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(url, headers=headers, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        
+    try:
+        return data["choices"][0]["message"]["content"]
+    except Exception:
+        pass
+    if isinstance(data, dict) and "text" in data:
+        return data["text"]
+    return json.dumps(data, ensure_ascii=False)
 
 
 # ============ JD EXTRACTION ============

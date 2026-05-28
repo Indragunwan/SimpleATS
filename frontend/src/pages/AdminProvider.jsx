@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Check, Plus, Zap, Cpu, Brain, Save } from "lucide-react";
+import { Check, Plus, Zap, Cpu, Brain, Save, Trash2 } from "lucide-react";
 
 export default function AdminProvider() {
   const [providers, setProviders] = useState([]);
@@ -72,6 +72,17 @@ export default function AdminProvider() {
       else toast.error("Koneksi gagal: " + data.error);
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Apakah Anda yakin ingin menghapus provider ini?")) return;
+    try {
+      await api.delete(`/config/ai-providers/${id}`);
+      toast.success("Provider berhasil dihapus");
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Gagal menghapus provider");
     }
   };
 
@@ -190,14 +201,25 @@ export default function AdminProvider() {
                     <Zap size={12} className="mr-1" /> Test Koneksi
                   </Button>
                   {!p.is_active && (
-                    <Button
-                      onClick={() => activate(p.id)}
-                      size="sm"
-                      className="rounded-sm bg-zinc-900 hover:bg-zinc-800"
-                      data-testid={`activate-provider-${p.id}`}
-                    >
-                      <Check size={12} className="mr-1" /> Aktifkan
-                    </Button>
+                    <>
+                      <Button
+                        onClick={() => activate(p.id)}
+                        size="sm"
+                        className="rounded-sm bg-zinc-900 hover:bg-zinc-800"
+                        data-testid={`activate-provider-${p.id}`}
+                      >
+                        <Check size={12} className="mr-1" /> Aktifkan
+                      </Button>
+                      <Button
+                        onClick={() => handleDelete(p.id)}
+                        variant="destructive"
+                        size="sm"
+                        className="rounded-sm bg-red-600 hover:bg-red-700 text-white"
+                        data-testid={`delete-provider-${p.id}`}
+                      >
+                        <Trash2 size={12} className="mr-1" /> Hapus
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>
@@ -257,6 +279,7 @@ function TaskAssignField({ icon: Icon, title, subtitle, hint, value, onChange, p
 
 function AddProviderDialog({ onCreated }) {
   const [open, setOpen] = useState(false);
+  const [testingConn, setTestingConn] = useState(false);
   const [form, setForm] = useState({
     name: "",
     provider_type: "custom",
@@ -277,6 +300,28 @@ function AddProviderDialog({ onCreated }) {
       onCreated();
     } catch (err) {
       toast.error("Gagal menambahkan provider");
+    }
+  };
+
+  const testConnection = async () => {
+    setTestingConn(true);
+    try {
+      const { data } = await api.post("/config/ai-providers/test", {
+        provider_type: form.provider_type,
+        base_url: form.base_url || "",
+        api_key: form.api_key || "",
+        llm_provider: form.llm_provider,
+        model_name: form.model_name,
+      });
+      if (data.success) {
+        toast.success("Koneksi berhasil: " + data.response);
+      } else {
+        toast.error("Koneksi gagal: " + data.error);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Terjadi kesalahan saat mengetes koneksi");
+    } finally {
+      setTestingConn(false);
     }
   };
 
@@ -353,18 +398,32 @@ function AddProviderDialog({ onCreated }) {
               />
             </div>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-between items-center pt-2">
             <Button
               type="button"
+              onClick={testConnection}
+              disabled={testingConn}
               variant="outline"
-              onClick={() => setOpen(false)}
+              size="sm"
               className="rounded-sm border-zinc-300"
+              data-testid="dialog-test-connection"
             >
-              Batal
+              <Zap size={12} className="mr-1" />
+              {testingConn ? "Mengetes..." : "Test Koneksi"}
             </Button>
-            <Button type="submit" className="rounded-sm bg-zinc-900 hover:bg-zinc-800" data-testid="submit-provider">
-              Simpan
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOpen(false)}
+                className="rounded-sm border-zinc-300"
+              >
+                Batal
+              </Button>
+              <Button type="submit" className="rounded-sm bg-zinc-900 hover:bg-zinc-800" data-testid="submit-provider">
+                Simpan
+              </Button>
+            </div>
           </div>
         </form>
       </div>

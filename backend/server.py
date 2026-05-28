@@ -917,6 +917,29 @@ async def create_provider(
     return out
 
 
+@api.delete("/config/ai-providers/{cfg_id}")
+async def delete_provider(
+    cfg_id: str,
+    user: dict = Depends(require_roles("admin_it")),
+) -> dict:
+    provider = await db.ai_provider_configs.find_one({"id": cfg_id})
+    if not provider:
+        raise HTTPException(404, "Konfigurasi tidak ditemukan")
+    if provider.get("is_active"):
+        raise HTTPException(400, "Tidak bisa menghapus provider yang sedang aktif")
+    
+    settings = await db.system_settings.find_one({"id": "task_assignments"})
+    if settings:
+        if settings.get("parsing_provider_id") == cfg_id or settings.get("scoring_provider_id") == cfg_id:
+            raise HTTPException(400, "Tidak bisa menghapus provider yang sedang digunakan pada penugasan model")
+            
+    await db.ai_provider_configs.delete_one({"id": cfg_id})
+    return {"status": "deleted"}
+
+
+
+
+
 @api.post("/config/ai-providers/test")
 async def test_provider(
     payload: TestConnectionRequest, user: dict = Depends(require_roles("admin_it"))
