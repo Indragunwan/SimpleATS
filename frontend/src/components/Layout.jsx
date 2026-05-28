@@ -8,11 +8,13 @@ import {
   Users,
   LogOut,
   Sparkles,
+  UsersRound,
 } from "lucide-react";
 
 const NAV = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Beranda", roles: ["hr_recruiter", "hiring_manager", "admin_it"] },
   { to: "/jobs", icon: Briefcase, label: "Lowongan", roles: ["hr_recruiter", "hiring_manager", "admin_it"] },
+  { to: "/talent-pool", icon: UsersRound, label: "Talent Pool", roles: ["hr_recruiter", "hiring_manager", "admin_it"] },
   { to: "/admin/provider", icon: Settings, label: "Konfigurasi AI", roles: ["admin_it"] },
   { to: "/admin/users", icon: Users, label: "Pengguna", roles: ["admin_it"] },
 ];

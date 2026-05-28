@@ -11,6 +11,8 @@ import JobDetail from "@/pages/JobDetail";
 import ScreeningDetail from "@/pages/ScreeningDetail";
 import AdminProvider from "@/pages/AdminProvider";
 import AdminUsers from "@/pages/AdminUsers";
+import TalentPool from "@/pages/TalentPool";
+import TalentPoolDetail from "@/pages/TalentPoolDetail";
 
 function Protected({ children, roles }) {
   return (
@@ -57,6 +59,22 @@ function App() {
             element={
               <Protected>
                 <ScreeningDetail />
+              </Protected>
+            }
+          />
+          <Route
+            path="/talent-pool"
+            element={
+              <Protected>
+                <TalentPool />
+              </Protected>
+            }
+          />
+          <Route
+            path="/talent-pool/:id"
+            element={
+              <Protected>
+                <TalentPoolDetail />
               </Protected>
             }
           />

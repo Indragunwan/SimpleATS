@@ -47,6 +47,14 @@ PRD uploaded by user: `PRD_Semantic_CV_Screening_v1.0.docx` — internal HR recr
 - Backend: 21/21 pytest PASS
 - Frontend: full e2e validated (login → dashboard → jobs → JD detail → screening detail → admin pages)
 
+## Implemented in v1.1 — Talent Pool (2026-05-28)
+- ✅ `GET /api/talent-pool` — all parsed candidates with best score across jobs, screenings count, shortlist count
+- ✅ `GET /api/talent-pool/{id}` — candidate detail + full screening history across jobs
+- ✅ `POST /api/jobs/{job_id}/screen-from-pool` — re-screen selected candidates (or auto-top-N) against a new JD; skips already-screened pairs
+- ✅ `/talent-pool` page with stats (total, high-score, screened, shortlisted) + searchable table
+- ✅ `/talent-pool/:id` page with screening history sidebar (clickable to existing ScreeningDetail)
+- ✅ "Saran dari Pool" button + dialog in JobDetail with checkbox picker, Top 5/Top 10 quick select
+
 ## Deferred / P1 Backlog
 - Audit log persistence + audit log viewer page
 - Industry ontology editor (admin)

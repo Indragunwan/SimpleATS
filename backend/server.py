@@ -18,6 +18,7 @@ from fastapi import (
     UploadFile,
 )
 from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
 
 ROOT_DIR = Path(__file__).parent
@@ -350,6 +351,53 @@ async def reextract_job(
 
 
 # ============ CANDIDATES + SCREENING ============
+async def _screen_candidate_for_job(
+    candidate_id: str, job_id: str, parsed: dict, cfg: dict
+) -> Optional[str]:
+    """Run semantic matching for one candidate against one job and persist result."""
+    import uuid
+
+    job = await db.job_postings.find_one({"id": job_id})
+    if not job:
+        return None
+    jd_data = {
+        "target_position": job.get("target_position", ""),
+        "department": job.get("department", ""),
+        "min_experience_years": job.get("min_experience_years", 0),
+        "education_requirement": job.get("education_requirement", ""),
+        "responsibilities": job.get("responsibilities", []),
+        "must_have": [c["value"] for c in job.get("criteria", []) if c["type"] == "must"],
+        "nice_to_have": [c["value"] for c in job.get("criteria", []) if c["type"] == "nice"],
+    }
+    evaluation = await evaluate_match(jd_data, parsed, cfg)
+    weights = job.get("weights", {})
+    total = calculate_total_score(evaluation, weights)
+    recommendation = recommendation_from_score(total, weights)
+
+    sr_id = str(uuid.uuid4())
+    sr = {
+        "id": sr_id,
+        "job_posting_id": job_id,
+        "candidate_id": candidate_id,
+        "total_score": total,
+        "must_have": evaluation["must_have"],
+        "experience": evaluation["experience"],
+        "domain": evaluation["domain"],
+        "education": evaluation["education"],
+        "nice_have": evaluation["nice_have"],
+        "recommendation": recommendation,
+        "rationale_summary": evaluation["rationale_summary"],
+        "strengths": evaluation["strengths"],
+        "gaps_summary": evaluation["gaps_summary"],
+        "decision": "pending",
+        "decided_by": None,
+        "decided_at": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.screening_results.insert_one(sr)
+    return sr_id
+
+
 async def _process_candidate(candidate_id: str, job_id: str) -> None:
     """Background task: parse CV + evaluate against JD."""
     try:
@@ -357,7 +405,6 @@ async def _process_candidate(candidate_id: str, job_id: str) -> None:
         if not cand:
             return
         cfg = await _get_active_ai_config()
-        # Parse CV
         await db.candidates.update_one({"id": candidate_id}, {"$set": {"status": "processing"}})
         parsed = await parse_cv(cand["raw_text"], cfg)
         await db.candidates.update_one(
@@ -372,52 +419,31 @@ async def _process_candidate(candidate_id: str, job_id: str) -> None:
                 }
             },
         )
-        # Screen against JD
-        job = await db.job_postings.find_one({"id": job_id})
-        if not job:
-            return
-        jd_data = {
-            "target_position": job.get("target_position", ""),
-            "department": job.get("department", ""),
-            "min_experience_years": job.get("min_experience_years", 0),
-            "education_requirement": job.get("education_requirement", ""),
-            "responsibilities": job.get("responsibilities", []),
-            "must_have": [c["value"] for c in job.get("criteria", []) if c["type"] == "must"],
-            "nice_to_have": [c["value"] for c in job.get("criteria", []) if c["type"] == "nice"],
-        }
-        evaluation = await evaluate_match(jd_data, parsed, cfg)
-        weights = job.get("weights", {})
-        total = calculate_total_score(evaluation, weights)
-        recommendation = recommendation_from_score(total, weights)
-
-        import uuid
-
-        sr = {
-            "id": str(uuid.uuid4()),
-            "job_posting_id": job_id,
-            "candidate_id": candidate_id,
-            "total_score": total,
-            "must_have": evaluation["must_have"],
-            "experience": evaluation["experience"],
-            "domain": evaluation["domain"],
-            "education": evaluation["education"],
-            "nice_have": evaluation["nice_have"],
-            "recommendation": recommendation,
-            "rationale_summary": evaluation["rationale_summary"],
-            "strengths": evaluation["strengths"],
-            "gaps_summary": evaluation["gaps_summary"],
-            "decision": "pending",
-            "decided_by": None,
-            "decided_at": None,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        await db.screening_results.insert_one(sr)
+        await _screen_candidate_for_job(candidate_id, job_id, parsed, cfg)
     except Exception as e:
         logger.exception("Candidate processing failed")
         await db.candidates.update_one(
             {"id": candidate_id},
             {"$set": {"status": "failed", "error_message": str(e)}},
         )
+
+
+async def _rescreen_pool_candidate(candidate_id: str, job_id: str) -> None:
+    """Background task: rescreen an already-parsed candidate against another job."""
+    try:
+        cand = await db.candidates.find_one({"id": candidate_id})
+        if not cand or cand.get("status") != "parsed":
+            return
+        # skip if already screened for this job
+        exists = await db.screening_results.find_one(
+            {"candidate_id": candidate_id, "job_posting_id": job_id}
+        )
+        if exists:
+            return
+        cfg = await _get_active_ai_config()
+        await _screen_candidate_for_job(candidate_id, job_id, cand.get("parsed", {}), cfg)
+    except Exception:
+        logger.exception("Rescreen failed for candidate %s", candidate_id)
 
 
 @api.post("/jobs/{job_id}/upload-cv")
@@ -513,6 +539,142 @@ async def get_screening(screening_id: str, user: dict = Depends(get_current_user
     cand = await db.candidates.find_one({"id": sr["candidate_id"]}, {"_id": 0})
     job = await db.job_postings.find_one({"id": sr["job_posting_id"]}, {"_id": 0})
     return {"screening": sr, "candidate": cand, "job": job}
+
+
+# ============ TALENT POOL ============
+@api.get("/talent-pool")
+async def list_talent_pool(user: dict = Depends(get_current_user)) -> list[dict]:
+    """Return all parsed candidates with their best score across all jobs."""
+    candidates = await db.candidates.find(
+        {"status": "parsed"}, {"_id": 0, "raw_text": 0}
+    ).to_list(2000)
+
+    # Aggregate best score per candidate
+    pipeline = [
+        {
+            "$group": {
+                "_id": "$candidate_id",
+                "best_score": {"$max": "$total_score"},
+                "screenings_count": {"$sum": 1},
+                "shortlisted_count": {
+                    "$sum": {"$cond": [{"$eq": ["$decision", "shortlisted"]}, 1, 0]}
+                },
+            }
+        }
+    ]
+    agg = await db.screening_results.aggregate(pipeline).to_list(5000)
+    stats = {row["_id"]: row for row in agg}
+
+    out = []
+    for c in candidates:
+        s = stats.get(c["id"], {})
+        parsed = c.get("parsed", {}) or {}
+        out.append(
+            {
+                "id": c["id"],
+                "name": c.get("name", "Unknown"),
+                "email": c.get("email", ""),
+                "phone": c.get("phone", ""),
+                "years_of_experience": parsed.get("years_of_experience", 0),
+                "top_skills": (parsed.get("skills", []) or [])[:6],
+                "current_position": (parsed.get("work_history", [{}]) or [{}])[0].get("position", "")
+                if parsed.get("work_history")
+                else "",
+                "best_score": s.get("best_score", 0),
+                "screenings_count": s.get("screenings_count", 0),
+                "shortlisted_count": s.get("shortlisted_count", 0),
+                "created_at": c.get("created_at", ""),
+            }
+        )
+    out.sort(key=lambda x: (x["best_score"], x["screenings_count"]), reverse=True)
+    return out
+
+
+@api.get("/talent-pool/{candidate_id}")
+async def get_pool_candidate(
+    candidate_id: str, user: dict = Depends(get_current_user)
+) -> dict:
+    """Get candidate detail + all screenings across jobs."""
+    cand = await db.candidates.find_one({"id": candidate_id}, {"_id": 0, "raw_text": 0})
+    if not cand:
+        raise HTTPException(404, "Kandidat tidak ditemukan")
+    screenings = await db.screening_results.find(
+        {"candidate_id": candidate_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    # attach job titles
+    job_ids = list({s["job_posting_id"] for s in screenings})
+    jobs = await db.job_postings.find(
+        {"id": {"$in": job_ids}}, {"_id": 0, "id": 1, "title": 1, "department": 1}
+    ).to_list(200)
+    job_map = {j["id"]: j for j in jobs}
+    for s in screenings:
+        j = job_map.get(s["job_posting_id"], {})
+        s["job_title"] = j.get("title", "—")
+        s["job_department"] = j.get("department", "")
+    return {"candidate": cand, "screenings": screenings}
+
+
+class ScreenFromPoolRequest(BaseModel):
+    candidate_ids: list[str] = Field(default_factory=list)
+    auto_top_n: int = 0  # if > 0, ignore candidate_ids and pick top-N from pool not yet screened
+
+
+@api.post("/jobs/{job_id}/screen-from-pool")
+async def screen_from_pool(
+    job_id: str,
+    payload: ScreenFromPoolRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+) -> dict:
+    job = await db.job_postings.find_one({"id": job_id})
+    if not job:
+        raise HTTPException(404, "JD tidak ditemukan")
+
+    already = {
+        s["candidate_id"]
+        async for s in db.screening_results.find(
+            {"job_posting_id": job_id}, {"candidate_id": 1, "_id": 0}
+        )
+    }
+
+    if payload.auto_top_n and payload.auto_top_n > 0:
+        # pick top-N candidates from pool (by best historical score) not yet screened for this job
+        pipeline = [
+            {
+                "$group": {
+                    "_id": "$candidate_id",
+                    "best_score": {"$max": "$total_score"},
+                }
+            },
+            {"$sort": {"best_score": -1}},
+        ]
+        agg = await db.screening_results.aggregate(pipeline).to_list(2000)
+        top_ids = [row["_id"] for row in agg if row["_id"] not in already][: payload.auto_top_n]
+        # also include parsed candidates with no screenings yet
+        if len(top_ids) < payload.auto_top_n:
+            extra = await db.candidates.find(
+                {"status": "parsed", "id": {"$nin": list(already) + top_ids}},
+                {"id": 1, "_id": 0},
+            ).limit(payload.auto_top_n - len(top_ids)).to_list(payload.auto_top_n)
+            top_ids.extend([e["id"] for e in extra])
+        target_ids = top_ids
+    else:
+        target_ids = [cid for cid in payload.candidate_ids if cid not in already]
+
+    queued = 0
+    for cid in target_ids:
+        cand = await db.candidates.find_one({"id": cid}, {"_id": 0, "status": 1})
+        if not cand or cand.get("status") != "parsed":
+            continue
+        background_tasks.add_task(_rescreen_pool_candidate, cid, job_id)
+        queued += 1
+
+    return {
+        "queued": queued,
+        "skipped_already_screened": len(payload.candidate_ids) - queued
+        if not payload.auto_top_n
+        else 0,
+    }
 
 
 @api.patch("/screenings/{screening_id}/decision")

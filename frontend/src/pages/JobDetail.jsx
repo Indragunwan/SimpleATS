@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import api, { BAND_COLORS, RECOMMENDATION_LABELS, SCORE_BAND } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, Upload, RotateCw, Briefcase, Search } from "lucide-react";
+import { ArrowLeft, Upload, RotateCw, Briefcase, Search, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 export default function JobDetail() {
@@ -14,6 +14,7 @@ export default function JobDetail() {
   const [search, setSearch] = useState("");
   const [minScore, setMinScore] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [poolOpen, setPoolOpen] = useState(false);
   const fileInputRef = useRef(null);
   const pollRef = useRef(null);
 
@@ -105,6 +106,14 @@ export default function JobDetail() {
           )}
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setPoolOpen(true)}
+            className="rounded-sm border-zinc-300"
+            data-testid="suggest-from-pool-button"
+          >
+            <Sparkles size={14} className="mr-1.5" /> Saran dari Pool
+          </Button>
           <Button
             variant="outline"
             onClick={handleReextract}
@@ -310,6 +319,153 @@ export default function JobDetail() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {poolOpen && (
+        <SuggestFromPoolDialog
+          jobId={id}
+          onClose={() => setPoolOpen(false)}
+          onQueued={() => {
+            setPoolOpen(false);
+            setTimeout(load, 1500);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SuggestFromPoolDialog({ jobId, onClose, onQueued }) {
+  const [pool, setPool] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    api
+      .get("/talent-pool")
+      .then((r) => setPool(r.data))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const toggle = (id) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  };
+
+  const submit = async () => {
+    if (selected.size === 0) {
+      toast.error("Pilih minimal satu kandidat");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { data } = await api.post(`/jobs/${jobId}/screen-from-pool`, {
+        candidate_ids: Array.from(selected),
+      });
+      toast.success(`${data.queued} kandidat di-screening ulang${data.skipped_already_screened ? ` (${data.skipped_already_screened} dilewati)` : ""}`);
+      onQueued();
+    } catch (err) {
+      toast.error("Gagal memproses");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const autoSelectTop = (n) => {
+    const ids = pool.slice(0, n).map((c) => c.id);
+    setSelected(new Set(ids));
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div className="bg-white border border-zinc-200 rounded-sm w-full max-w-2xl max-h-[80vh] flex flex-col" data-testid="suggest-pool-dialog">
+        <div className="px-6 py-4 border-b border-zinc-200">
+          <h3 className="font-heading text-lg font-semibold tracking-tight">Saran dari Talent Pool</h3>
+          <p className="text-xs text-zinc-500 mt-1">
+            Pilih kandidat dari pool untuk di-screening terhadap JD ini (kandidat yang sudah pernah di-screening akan otomatis dilewati).
+          </p>
+        </div>
+        <div className="px-6 py-3 border-b border-zinc-200 flex items-center justify-between gap-2 text-xs">
+          <div className="text-zinc-500">{selected.size} dipilih · {pool.length} di pool</div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => autoSelectTop(5)}
+              className="px-2 py-1 border border-zinc-300 rounded-sm hover:bg-zinc-50"
+              data-testid="auto-top-5"
+            >
+              Top 5
+            </button>
+            <button
+              onClick={() => autoSelectTop(10)}
+              className="px-2 py-1 border border-zinc-300 rounded-sm hover:bg-zinc-50"
+              data-testid="auto-top-10"
+            >
+              Top 10
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="px-2 py-1 border border-zinc-300 rounded-sm hover:bg-zinc-50"
+            >
+              Bersihkan
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="p-8 text-center text-zinc-500 text-sm">Memuat...</div>
+          ) : pool.length === 0 ? (
+            <div className="p-8 text-center">
+              <div className="text-zinc-700 font-medium mb-1">Pool masih kosong</div>
+              <div className="text-sm text-zinc-500">Belum ada kandidat ter-parsing dalam sistem.</div>
+            </div>
+          ) : (
+            <ul className="divide-y divide-zinc-100">
+              {pool.map((c) => (
+                <li
+                  key={c.id}
+                  onClick={() => toggle(c.id)}
+                  className="px-6 py-3 flex items-center gap-3 cursor-pointer hover:bg-zinc-50"
+                  data-testid={`pool-pick-${c.id}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(c.id)}
+                    onChange={() => toggle(c.id)}
+                    className="rounded-sm"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm">{c.name}</div>
+                    <div className="text-xs text-zinc-500 mt-0.5">
+                      {c.current_position || "—"} · {c.years_of_experience} thn ·{" "}
+                      {c.top_skills.slice(0, 3).join(", ")}
+                    </div>
+                  </div>
+                  {c.best_score > 0 && (
+                    <span className={`text-xs font-mono font-semibold px-2 py-0.5 rounded-sm border ${BAND_COLORS[SCORE_BAND(c.best_score)]}`}>
+                      {c.best_score}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-zinc-200 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose} className="rounded-sm border-zinc-300">
+            Batal
+          </Button>
+          <Button
+            onClick={submit}
+            disabled={submitting || selected.size === 0}
+            className="rounded-sm bg-zinc-900 hover:bg-zinc-800"
+            data-testid="submit-pool-screening"
+          >
+            {submitting ? "Memproses..." : `Screening ${selected.size} Kandidat`}
+          </Button>
+        </div>
       </div>
     </div>
   );
