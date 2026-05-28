@@ -20,6 +20,7 @@ from fastapi import (
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -61,7 +62,22 @@ mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
-app = FastAPI(title="Sistem Penapisan CV Berbasis AI")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await seed_demo_users(db)
+    await seed_default_ai_config(db)
+    await backfill_criteria_ids(db)
+    logger.info("Startup complete")
+    try:
+        yield
+    finally:
+        # Shutdown
+        client.close()
+
+
+app = FastAPI(title="Sistem Penapisan CV Berbasis AI", lifespan=lifespan)
 api = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -106,18 +122,7 @@ async def _get_ai_config_for_task(task: str) -> dict:
     return await _get_active_ai_config()
 
 
-# ============ STARTUP ============
-@app.on_event("startup")
-async def on_startup() -> None:
-    await seed_demo_users(db)
-    await seed_default_ai_config(db)
-    await backfill_criteria_ids(db)
-    logger.info("Startup complete")
-
-
-@app.on_event("shutdown")
-async def on_shutdown() -> None:
-    client.close()
+# Lifespan-based startup/shutdown handled via `lifespan` contextmanager above.
 
 
 # ============ HEALTH ============
