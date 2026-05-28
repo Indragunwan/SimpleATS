@@ -4,18 +4,30 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Check, Plus, Zap } from "lucide-react";
+import { Check, Plus, Zap, Cpu, Brain, Save } from "lucide-react";
 
 export default function AdminProvider() {
   const [providers, setProviders] = useState([]);
+  const [assignments, setAssignments] = useState({
+    parsing_provider_id: "",
+    scoring_provider_id: "",
+  });
   const [testing, setTesting] = useState(false);
+  const [savingAssign, setSavingAssign] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/config/ai-providers");
-      setProviders(data);
+      const [p, a] = await Promise.all([
+        api.get("/config/ai-providers"),
+        api.get("/config/task-assignments"),
+      ]);
+      setProviders(p.data);
+      setAssignments({
+        parsing_provider_id: a.data.parsing_provider_id || "",
+        scoring_provider_id: a.data.scoring_provider_id || "",
+      });
     } finally {
       setLoading(false);
     }
@@ -29,6 +41,21 @@ export default function AdminProvider() {
     await api.patch(`/config/ai-providers/${id}`, { is_active: true });
     toast.success("Provider diaktifkan");
     load();
+  };
+
+  const saveAssignments = async () => {
+    setSavingAssign(true);
+    try {
+      await api.put("/config/task-assignments", {
+        parsing_provider_id: assignments.parsing_provider_id || null,
+        scoring_provider_id: assignments.scoring_provider_id || null,
+      });
+      toast.success("Penugasan model disimpan");
+    } catch (err) {
+      toast.error("Gagal menyimpan penugasan");
+    } finally {
+      setSavingAssign(false);
+    }
   };
 
   const handleTest = async (p) => {
@@ -63,7 +90,59 @@ export default function AdminProvider() {
       {loading ? (
         <div className="text-zinc-500 text-sm">Memuat...</div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-6">
+          {/* Task model assignment panel */}
+          <div className="bg-white border border-zinc-200 rounded-sm p-5" data-testid="task-assignment-panel">
+            <div className="flex items-start justify-between mb-1">
+              <div>
+                <h3 className="font-heading text-base font-semibold tracking-tight">
+                  Penugasan Model per Tugas
+                </h3>
+                <p className="text-xs text-zinc-500 mt-1 max-w-2xl">
+                  Optimasi biaya: gunakan model cepat & murah (Gemini Flash) untuk parsing struktural,
+                  dan model premium (Claude/GPT) hanya untuk scoring yang butuh judgment. Jika dikosongkan,
+                  akan memakai provider yang ditandai <span className="font-semibold">AKTIF</span> sebagai fallback.
+                </p>
+              </div>
+              <Button
+                onClick={saveAssignments}
+                disabled={savingAssign}
+                size="sm"
+                className="rounded-sm bg-zinc-900 hover:bg-zinc-800"
+                data-testid="save-task-assignments"
+              >
+                <Save size={12} className="mr-1.5" />
+                {savingAssign ? "Menyimpan..." : "Simpan"}
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
+              <TaskAssignField
+                icon={Cpu}
+                title="Parsing"
+                subtitle="Ekstraksi kriteria JD + parsing CV (struktural)"
+                hint="Rekomendasi: Gemini 3 Flash / 2.5 Flash · ~Rp 5-20/CV"
+                value={assignments.parsing_provider_id}
+                onChange={(v) => setAssignments({ ...assignments, parsing_provider_id: v })}
+                providers={providers}
+                testId="assign-parsing"
+              />
+              <TaskAssignField
+                icon={Brain}
+                title="Scoring & Rationale"
+                subtitle="Semantic matching 5 dimensi + narasi rationale (judgment)"
+                hint="Rekomendasi: Claude Sonnet 4.6 atau GPT-5.4 untuk kualitas · atau Flash untuk hemat"
+                value={assignments.scoring_provider_id}
+                onChange={(v) => setAssignments({ ...assignments, scoring_provider_id: v })}
+                providers={providers}
+                testId="assign-scoring"
+              />
+            </div>
+          </div>
+
+          <div className="text-xs uppercase tracking-wider text-zinc-500 font-medium pt-2">
+            Daftar Provider
+          </div>
           {providers.map((p) => (
             <div
               key={p.id}
@@ -79,6 +158,16 @@ export default function AdminProvider() {
                     {p.is_active && (
                       <span className="text-xs px-2 py-0.5 rounded-sm bg-zinc-900 text-white font-medium">
                         AKTIF
+                      </span>
+                    )}
+                    {assignments.parsing_provider_id === p.id && (
+                      <span className="text-xs px-2 py-0.5 rounded-sm bg-blue-50 text-blue-700 border border-blue-200 font-medium">
+                        PARSING
+                      </span>
+                    )}
+                    {assignments.scoring_provider_id === p.id && (
+                      <span className="text-xs px-2 py-0.5 rounded-sm bg-violet-50 text-violet-700 border border-violet-200 font-medium">
+                        SCORING
                       </span>
                     )}
                     <span className="text-xs px-2 py-0.5 rounded-sm border border-zinc-200 bg-zinc-50 text-zinc-700">
@@ -132,6 +221,36 @@ function Field({ label, value, mono }) {
     <div>
       <div className="text-zinc-500 uppercase tracking-wider text-[10px] mb-1">{label}</div>
       <div className={`text-zinc-900 ${mono ? "font-mono" : ""} truncate`}>{value || "—"}</div>
+    </div>
+  );
+}
+
+function TaskAssignField({ icon: Icon, title, subtitle, hint, value, onChange, providers, testId }) {
+  return (
+    <div className="border border-zinc-200 rounded-sm p-4">
+      <div className="flex items-start gap-2 mb-3">
+        <div className="w-7 h-7 bg-zinc-100 flex items-center justify-center rounded-sm text-zinc-700 mt-0.5">
+          <Icon size={14} />
+        </div>
+        <div>
+          <div className="text-sm font-medium">{title}</div>
+          <div className="text-xs text-zinc-500 mt-0.5">{subtitle}</div>
+        </div>
+      </div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full border border-zinc-300 rounded-sm text-sm h-10 px-3"
+        data-testid={testId}
+      >
+        <option value="">— Pakai provider AKTIF (fallback) —</option>
+        {providers.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name} · {p.llm_provider}/{p.model_name}
+          </option>
+        ))}
+      </select>
+      <div className="text-xs text-zinc-400 mt-2 italic">{hint}</div>
     </div>
   );
 }

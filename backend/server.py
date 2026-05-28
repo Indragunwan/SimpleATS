@@ -85,6 +85,25 @@ async def _get_active_ai_config() -> dict:
     return cfg
 
 
+async def _get_ai_config_for_task(task: str) -> dict:
+    """Get AI config for a specific task (parsing | scoring).
+    Falls back to the default active provider when no assignment is set.
+
+    Tasks:
+      parsing → JD extraction + CV parsing (structural, deterministic)
+      scoring → Semantic matching + rationale (judgment, narrative)
+    """
+    settings = await db.system_settings.find_one({"id": "task_assignments"}, {"_id": 0})
+    if settings:
+        key = f"{task}_provider_id"
+        provider_id = settings.get(key)
+        if provider_id:
+            cfg = await db.ai_provider_configs.find_one({"id": provider_id}, {"_id": 0})
+            if cfg:
+                return cfg
+    return await _get_active_ai_config()
+
+
 # ============ STARTUP ============
 @app.on_event("startup")
 async def on_startup() -> None:
@@ -254,7 +273,7 @@ async def create_job(
 
     # Trigger extraction (sync but fast - LLM call ~5-15s)
     try:
-        cfg = await _get_active_ai_config()
+        cfg = await _get_ai_config_for_task("parsing")
         extracted = await extract_jd_criteria(text, cfg)
         criteria = []
         for v in extracted.get("must_have", []):
@@ -327,7 +346,7 @@ async def reextract_job(
     job = await db.job_postings.find_one({"id": job_id})
     if not job:
         raise HTTPException(404, "JD tidak ditemukan")
-    cfg = await _get_active_ai_config()
+    cfg = await _get_ai_config_for_task("parsing")
     extracted = await extract_jd_criteria(job["raw_jd_text"], cfg)
     criteria = []
     for v in extracted.get("must_have", []):
@@ -352,7 +371,7 @@ async def reextract_job(
 
 # ============ CANDIDATES + SCREENING ============
 async def _screen_candidate_for_job(
-    candidate_id: str, job_id: str, parsed: dict, cfg: dict
+    candidate_id: str, job_id: str, parsed: dict, cfg: Optional[dict] = None
 ) -> Optional[str]:
     """Run semantic matching for one candidate against one job and persist result."""
     import uuid
@@ -360,6 +379,8 @@ async def _screen_candidate_for_job(
     job = await db.job_postings.find_one({"id": job_id})
     if not job:
         return None
+    if cfg is None:
+        cfg = await _get_ai_config_for_task("scoring")
     jd_data = {
         "target_position": job.get("target_position", ""),
         "department": job.get("department", ""),
@@ -404,9 +425,10 @@ async def _process_candidate(candidate_id: str, job_id: str) -> None:
         cand = await db.candidates.find_one({"id": candidate_id})
         if not cand:
             return
-        cfg = await _get_active_ai_config()
+        parsing_cfg = await _get_ai_config_for_task("parsing")
+        scoring_cfg = await _get_ai_config_for_task("scoring")
         await db.candidates.update_one({"id": candidate_id}, {"$set": {"status": "processing"}})
-        parsed = await parse_cv(cand["raw_text"], cfg)
+        parsed = await parse_cv(cand["raw_text"], parsing_cfg)
         await db.candidates.update_one(
             {"id": candidate_id},
             {
@@ -419,7 +441,7 @@ async def _process_candidate(candidate_id: str, job_id: str) -> None:
                 }
             },
         )
-        await _screen_candidate_for_job(candidate_id, job_id, parsed, cfg)
+        await _screen_candidate_for_job(candidate_id, job_id, parsed, scoring_cfg)
     except Exception as e:
         logger.exception("Candidate processing failed")
         await db.candidates.update_one(
@@ -440,8 +462,8 @@ async def _rescreen_pool_candidate(candidate_id: str, job_id: str) -> None:
         )
         if exists:
             return
-        cfg = await _get_active_ai_config()
-        await _screen_candidate_for_job(candidate_id, job_id, cand.get("parsed", {}), cfg)
+        scoring_cfg = await _get_ai_config_for_task("scoring")
+        await _screen_candidate_for_job(candidate_id, job_id, cand.get("parsed", {}), scoring_cfg)
     except Exception:
         logger.exception("Rescreen failed for candidate %s", candidate_id)
 
@@ -754,7 +776,7 @@ async def create_provider(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.ai_provider_configs.insert_one(doc)
-    out = {**doc}
+    out = {k: v for k, v in doc.items() if k != "_id"}
     if out.get("api_key"):
         out["api_key"] = "***" + out["api_key"][-4:] if len(out["api_key"]) > 4 else "***"
     return out
@@ -777,6 +799,56 @@ async def test_provider(
         return {"success": True, "response": result[:200]}
     except Exception as e:
         return {"success": False, "error": str(e)[:300]}
+
+
+# ============ TASK MODEL ASSIGNMENTS ============
+class TaskAssignmentUpdate(BaseModel):
+    parsing_provider_id: Optional[str] = None
+    scoring_provider_id: Optional[str] = None
+
+
+@api.get("/config/task-assignments")
+async def get_task_assignments(user: dict = Depends(require_roles("admin_it"))) -> dict:
+    settings = await db.system_settings.find_one(
+        {"id": "task_assignments"}, {"_id": 0}
+    ) or {"id": "task_assignments", "parsing_provider_id": None, "scoring_provider_id": None}
+
+    async def _resolve(pid: Optional[str]) -> Optional[dict]:
+        if not pid:
+            return None
+        p = await db.ai_provider_configs.find_one({"id": pid}, {"_id": 0})
+        if p and p.get("api_key"):
+            p["api_key"] = "***" + p["api_key"][-4:] if len(p["api_key"]) > 4 else "***"
+        return p
+
+    return {
+        "parsing_provider_id": settings.get("parsing_provider_id"),
+        "scoring_provider_id": settings.get("scoring_provider_id"),
+        "parsing_provider": await _resolve(settings.get("parsing_provider_id")),
+        "scoring_provider": await _resolve(settings.get("scoring_provider_id")),
+    }
+
+
+@api.put("/config/task-assignments")
+async def update_task_assignments(
+    payload: TaskAssignmentUpdate,
+    user: dict = Depends(require_roles("admin_it")),
+) -> dict:
+    update: dict = {"id": "task_assignments"}
+    # Validate provider IDs exist (if provided non-empty)
+    for field in ("parsing_provider_id", "scoring_provider_id"):
+        val = getattr(payload, field)
+        if val:
+            exists = await db.ai_provider_configs.find_one({"id": val})
+            if not exists:
+                raise HTTPException(400, f"Provider untuk {field} tidak ditemukan")
+            update[field] = val
+        else:
+            update[field] = None
+    await db.system_settings.update_one(
+        {"id": "task_assignments"}, {"$set": update}, upsert=True
+    )
+    return {"status": "saved", **update}
 
 
 # ============ DASHBOARD ============
