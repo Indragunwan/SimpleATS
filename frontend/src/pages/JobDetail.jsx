@@ -233,12 +233,13 @@ export default function JobDetail() {
               <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide">Pengalaman</th>
               <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide">Rekomendasi</th>
               <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide">Keputusan</th>
+              <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide text-right">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-5 py-12 text-center">
+                <td colSpan={8} className="px-5 py-12 text-center">
                   <div className="text-zinc-700 font-medium mb-1">Belum ada kandidat</div>
                   <div className="text-sm text-zinc-500">
                     Unggah CV (bisa banyak sekaligus) untuk melihat ranking otomatis.
@@ -287,6 +288,20 @@ export default function JobDetail() {
                     <td className="px-5 py-3">
                       {!isProcessing && !isFailed && (
                         <DecisionBadge decision={c.decision} />
+                      )}
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      {c.id && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/screenings/${c.id}`);
+                          }}
+                          data-testid={`view-screening-${c.id}`}
+                          className="text-xs px-2.5 py-1 rounded-sm border border-zinc-300 text-zinc-700 hover:bg-zinc-900 hover:text-white hover:border-zinc-900 transition-colors font-medium"
+                        >
+                          Detail →
+                        </button>
                       )}
                     </td>
                   </tr>
