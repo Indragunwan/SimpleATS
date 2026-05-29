@@ -14,7 +14,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, FileText, Users } from "lucide-react";
+import { Plus, FileText, Users, Trash2 } from "lucide-react";
 
 export default function Jobs() {
   const [jobs, setJobs] = useState([]);
@@ -53,7 +53,6 @@ export default function Jobs() {
           <thead className="bg-zinc-50 border-b border-zinc-200">
             <tr className="text-left">
               <th className="px-5 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wide">Posisi</th>
-              <th className="px-5 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wide">Departemen</th>
               <th className="px-5 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wide">Kriteria</th>
               <th className="px-5 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wide text-right">Kandidat</th>
               <th className="px-5 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wide">Status</th>
@@ -98,7 +97,6 @@ export default function Jobs() {
                       <div className="text-xs text-zinc-500 mt-0.5">{j.target_position}</div>
                     )}
                   </td>
-                  <td className="px-5 py-4 text-zinc-600">{j.department || "—"}</td>
                   <td className="px-5 py-4">
                     <div className="flex gap-3 text-xs">
                       <span className="text-emerald-700">
@@ -119,7 +117,23 @@ export default function Jobs() {
                     <StatusBadge status={j.status} extraction={j.extraction_status} />
                   </td>
                   <td className="px-5 py-4 text-right">
-                    <span className="text-xs text-zinc-400">→</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm("Yakin ingin menghapus lowongan ini?")) {
+                          api.delete(`/jobs/${j.id}`).then(() => {
+                            toast.success("Lowongan berhasil dihapus");
+                            load();
+                          }).catch((err) => {
+                            toast.error(err?.response?.data?.detail || "Gagal menghapus lowongan");
+                          });
+                        }
+                      }}
+                      className="text-zinc-400 hover:text-rose-600 p-1"
+                      title="Hapus Lowongan"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </td>
                 </tr>
               ))
@@ -157,9 +171,8 @@ function StatusBadge({ status, extraction }) {
 
 function CreateJobDialog({ open, setOpen, onCreated }) {
   const [title, setTitle] = useState("");
-  const [department, setDepartment] = useState("");
   const [rawJd, setRawJd] = useState("");
-  const [file, setFile] = useState(null);
+  const [rawSpec, setRawSpec] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -168,17 +181,16 @@ function CreateJobDialog({ open, setOpen, onCreated }) {
       toast.error("Judul harus diisi");
       return;
     }
-    if (!rawJd.trim() && !file) {
-      toast.error("Teks JD atau file harus disediakan");
+    if (!rawJd.trim() && !rawSpec.trim()) {
+      toast.error("Teks JD atau Spesifikasi harus disediakan");
       return;
     }
     setSubmitting(true);
     try {
       const fd = new FormData();
       fd.append("title", title);
-      fd.append("department", department);
       fd.append("raw_jd_text", rawJd);
-      if (file) fd.append("file", file);
+      fd.append("raw_spec_text", rawSpec);
 
       const { data } = await api.post("/jobs", fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -186,9 +198,8 @@ function CreateJobDialog({ open, setOpen, onCreated }) {
       toast.success("Lowongan dibuat. Ekstraksi kriteria selesai.");
       setOpen(false);
       setTitle("");
-      setDepartment("");
       setRawJd("");
-      setFile(null);
+      setRawSpec("");
       onCreated();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Gagal membuat lowongan");
@@ -220,36 +231,25 @@ function CreateJobDialog({ open, setOpen, onCreated }) {
             />
           </div>
           <div>
-            <Label className="text-xs uppercase tracking-wider text-zinc-600">Departemen</Label>
-            <Input
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-              placeholder="Contoh: People & Culture"
-              data-testid="create-job-department"
-              className="mt-1 rounded-sm"
-            />
-          </div>
-          <div>
-            <Label className="text-xs uppercase tracking-wider text-zinc-600">Teks JD</Label>
+            <Label className="text-xs uppercase tracking-wider text-zinc-600">Teks JD / Tanggung Jawab</Label>
             <Textarea
               value={rawJd}
               onChange={(e) => setRawJd(e.target.value)}
-              placeholder="Paste deskripsi pekerjaan di sini..."
-              rows={6}
-              data-testid="create-job-text"
+              placeholder="Paste deskripsi pekerjaan / tanggung jawab di sini..."
+              rows={5}
+              data-testid="create-job-jd"
               className="mt-1 rounded-sm font-mono text-xs"
             />
           </div>
           <div>
-            <Label className="text-xs uppercase tracking-wider text-zinc-600">
-              Atau Unggah File (PDF/DOCX/TXT)
-            </Label>
-            <input
-              type="file"
-              accept=".pdf,.docx,.doc,.txt"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              data-testid="create-job-file"
-              className="mt-1 block w-full text-sm text-zinc-700 file:mr-3 file:py-2 file:px-3 file:rounded-sm file:border file:border-zinc-200 file:text-xs file:font-medium file:bg-white file:text-zinc-900 hover:file:bg-zinc-50"
+            <Label className="text-xs uppercase tracking-wider text-zinc-600">Teks Spesifikasi / Kualifikasi</Label>
+            <Textarea
+              value={rawSpec}
+              onChange={(e) => setRawSpec(e.target.value)}
+              placeholder="Paste kualifikasi / persyaratan di sini..."
+              rows={5}
+              data-testid="create-job-spec"
+              className="mt-1 rounded-sm font-mono text-xs"
             />
           </div>
           <DialogFooter>

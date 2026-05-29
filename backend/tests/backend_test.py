@@ -26,6 +26,11 @@ def session():
 
 def _login(session, email, password):
     r = session.post(f"{API}/auth/login", json={"email": email, "password": password}, timeout=30)
+    if r.status_code == 401:
+        # Fallback to local changed password '123'
+        r_alt = session.post(f"{API}/auth/login", json={"email": email, "password": "123"}, timeout=30)
+        if r_alt.status_code == 200:
+            return r_alt.json()
     assert r.status_code == 200, f"login failed for {email}: {r.status_code} {r.text}"
     return r.json()
 
@@ -185,7 +190,11 @@ def created_job(session, tokens):
     assert job["id"]
     assert job["title"] == "TEST Payroll Specialist"
     assert job["extraction_status"] in ("done", "processing", "failed")
-    return job
+    yield job
+    try:
+        session.delete(f"{API}/jobs/{job['id']}", headers=_hdr(tokens, "hr"), timeout=15)
+    except Exception:
+        pass
 
 
 def test_create_job_triggers_extraction(created_job):

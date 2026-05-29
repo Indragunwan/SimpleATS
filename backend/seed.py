@@ -3,6 +3,9 @@ import logging
 from datetime import datetime, timezone
 
 from auth import hash_password
+from models import DBUser, DBAIProviderConfig, DBJobPosting
+from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 
 logger = logging.getLogger(__name__)
 
@@ -28,56 +31,65 @@ DEMO_USERS = [
 ]
 
 
-async def seed_demo_users(db) -> None:
+async def seed_demo_users(session) -> None:
     import uuid
 
     for user in DEMO_USERS:
-        existing = await db.users.find_one({"email": user["email"]})
+        stmt = select(DBUser).where(DBUser.email == user["email"])
+        res = await session.execute(stmt)
+        existing = res.scalar_one_or_none()
         if existing:
             continue
-        doc = {
-            "id": str(uuid.uuid4()),
-            "name": user["name"],
-            "email": user["email"],
-            "password_hash": hash_password(user["password"]),
-            "role": user["role"],
-            "is_active": True,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        await db.users.insert_one(doc)
+        db_user = DBUser(
+            id=str(uuid.uuid4()),
+            name=user["name"],
+            email=user["email"],
+            password_hash=hash_password(user["password"]),
+            role=user["role"],
+            is_active=True,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        session.add(db_user)
         logger.info(f"Seeded demo user: {user['email']}")
+    await session.commit()
 
 
-async def seed_default_ai_config(db) -> None:
+async def seed_default_ai_config(session) -> None:
     import uuid
 
-    existing = await db.ai_provider_configs.find_one({"provider_type": "emergent"})
+    stmt = select(DBAIProviderConfig).where(DBAIProviderConfig.provider_type == "emergent")
+    res = await session.execute(stmt)
+    existing = res.scalar_one_or_none()
     if existing:
         return
-    doc = {
-        "id": str(uuid.uuid4()),
-        "name": "Emergent Universal (Default)",
-        "provider_type": "emergent",
-        "base_url": "",
-        "api_key": "",
-        "llm_provider": "anthropic",
-        "model_name": "claude-sonnet-4-6",
-        "temperature": 0.2,
-        "max_tokens": 4000,
-        "is_active": True,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    await db.ai_provider_configs.insert_one(doc)
+    doc = DBAIProviderConfig(
+        id=str(uuid.uuid4()),
+        name="Emergent Universal (Default)",
+        provider_type="emergent",
+        base_url="",
+        api_key="",
+        llm_provider="anthropic",
+        model_name="claude-sonnet-4-6",
+        temperature=0.2,
+        max_tokens=4000,
+        is_active=True,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    session.add(doc)
+    await session.commit()
     logger.info("Seeded default AI provider config (Emergent)")
 
 
-async def backfill_criteria_ids(db) -> None:
+async def backfill_criteria_ids(session) -> None:
     """Backfill missing id/weight fields on existing job criteria for backward compat."""
     import uuid
 
+    stmt = select(DBJobPosting)
+    res = await session.execute(stmt)
+    jobs = res.scalars().all()
     updated = 0
-    async for job in db.job_postings.find({}, {"_id": 0, "id": 1, "criteria": 1}):
-        criteria = job.get("criteria") or []
+    for job in jobs:
+        criteria = job.criteria or []
         if not criteria:
             continue
         changed = False
@@ -89,9 +101,9 @@ async def backfill_criteria_ids(db) -> None:
                 c["weight"] = 3
                 changed = True
         if changed:
-            await db.job_postings.update_one(
-                {"id": job["id"]}, {"$set": {"criteria": criteria}}
-            )
+            job.criteria = criteria
+            flag_modified(job, "criteria")
             updated += 1
     if updated:
+        await session.commit()
         logger.info(f"Backfilled criteria id/weight on {updated} job(s)")

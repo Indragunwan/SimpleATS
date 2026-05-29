@@ -3,9 +3,15 @@ import { useNavigate, useParams } from "react-router-dom";
 import api, { BAND_COLORS, RECOMMENDATION_LABELS, SCORE_BAND } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, Upload, RotateCw, Briefcase, Search, Sparkles } from "lucide-react";
+import { ArrowLeft, Upload, RotateCw, Briefcase, Search, Sparkles, Trash2, HelpCircle, Pencil, Save, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import CriteriaEditor from "@/components/CriteriaEditor";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export default function JobDetail() {
   const { id } = useParams();
@@ -18,6 +24,68 @@ export default function JobDetail() {
   const [poolOpen, setPoolOpen] = useState(false);
   const fileInputRef = useRef(null);
   const pollRef = useRef(null);
+
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [metaForm, setMetaForm] = useState({
+    status: "",
+    min_experience_years: 0,
+    must_have: 40,
+    experience: 30,
+    domain: 15,
+    education: 5,
+    nice_have: 10,
+    shortlist_threshold: 75,
+  });
+
+  const startEditingMeta = () => {
+    setMetaForm({
+      status: job.status || "draft",
+      min_experience_years: job.min_experience_years || 0,
+      must_have: job.weights?.must_have ?? 40,
+      experience: 0,
+      domain: job.weights?.domain ?? 15,
+      education: job.weights?.education ?? 5,
+      nice_have: job.weights?.nice_have ?? 10,
+      shortlist_threshold: job.weights?.shortlist_threshold ?? 75,
+    });
+    setEditingMeta(true);
+  };
+
+  const saveMeta = async () => {
+    const totalWeights =
+      Number(metaForm.must_have) +
+      Number(metaForm.domain) +
+      Number(metaForm.education) +
+      Number(metaForm.nice_have);
+
+    if (totalWeights !== 100) {
+      toast.error(`Total bobot harus 100% (saat ini: ${totalWeights}%)`);
+      return;
+    }
+
+    try {
+      const { data } = await api.patch(`/jobs/${id}`, {
+        status: metaForm.status,
+        min_experience_years: Number(metaForm.min_experience_years),
+        weights: {
+          must_have: Number(metaForm.must_have),
+          experience: 0,
+          domain: Number(metaForm.domain),
+          education: Number(metaForm.education),
+          nice_have: Number(metaForm.nice_have),
+          shortlist_threshold: Number(metaForm.shortlist_threshold),
+          edu_level_pct: job.weights?.edu_level_pct ?? 70,
+          edu_major_pct: job.weights?.edu_major_pct ?? 30,
+          reject_threshold: job.weights?.reject_threshold ?? 40,
+        },
+      });
+      setJob(data);
+      toast.success("Detail lowongan diperbarui");
+      setEditingMeta(false);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal memperbarui detail lowongan");
+    }
+  };
 
   const load = useCallback(async () => {
     const [j, c] = await Promise.all([
@@ -35,7 +103,10 @@ export default function JobDetail() {
   // Poll while any candidate is processing
   useEffect(() => {
     const pending = candidates.some(
-      (c) => c.candidate_status === "pending" || c.candidate_status === "processing"
+      (c) =>
+        c.candidate_status === "pending" ||
+        c.candidate_status === "processing" ||
+        (c.candidate_status === "parsed" && !c.id)
     );
     if (pending) {
       pollRef.current = setTimeout(load, 4000);
@@ -69,6 +140,32 @@ export default function JobDetail() {
       toast.success("Kriteria di-ekstrak ulang");
     } catch (err) {
       toast.error("Gagal ekstrak ulang");
+    }
+  };
+
+  const handleDeleteJob = async () => {
+    if (candidates.length > 0) {
+      toast.error("Hapus semua kandidat terlebih dahulu sebelum menghapus lowongan.");
+      return;
+    }
+    if (!window.confirm("Yakin ingin menghapus lowongan ini? Tindakan ini tidak dapat dibatalkan.")) return;
+    try {
+      await api.delete(`/jobs/${id}`);
+      toast.success("Lowongan berhasil dihapus");
+      navigate("/jobs");
+    } catch (err) {
+      toast.error("Gagal menghapus lowongan");
+    }
+  };
+
+  const handleDeleteCandidate = async (candidateId) => {
+    if (!window.confirm("Yakin ingin menghapus kandidat ini?")) return;
+    try {
+      await api.delete(`/jobs/${id}/candidates/${candidateId}`);
+      toast.success("Kandidat berhasil dihapus");
+      setLoad((l) => l + 1);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal menghapus kandidat");
     }
   };
 
@@ -122,6 +219,14 @@ export default function JobDetail() {
             <RotateCw size={14} className="mr-1.5" /> Ekstrak Ulang
           </Button>
           <Button
+            variant="outline"
+            onClick={handleDeleteJob}
+            className="rounded-sm border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+            data-testid="delete-job-button"
+          >
+            <Trash2 size={14} className="mr-1.5" /> Hapus Lowongan
+          </Button>
+          <Button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
             className="rounded-sm bg-zinc-900 hover:bg-zinc-800"
@@ -149,20 +254,201 @@ export default function JobDetail() {
         </div>
 
         <div className="bg-white border border-zinc-200 rounded-sm p-5 h-fit" data-testid="job-meta">
-          <div className="space-y-3 text-sm">
-            <Meta label="Min. Pengalaman" value={`${job.min_experience_years} tahun`} />
-            <Meta label="Status" value={job.status} />
-            <Meta label="Bobot Must" value={`${job.weights?.must_have || 40}%`} />
-            <Meta label="Bobot Pengalaman" value={`${job.weights?.experience || 30}%`} />
-            <Meta label="Bobot Domain" value={`${job.weights?.domain || 15}%`} />
-            <Meta label="Bobot Pendidikan" value={`${job.weights?.education || 5}%`} />
-            <Meta label="Bobot Nice" value={`${job.weights?.nice_have || 10}%`} />
-            <Meta label="Threshold Shortlist" value={`≥ ${job.weights?.shortlist_threshold || 75}`} />
+          <div className="flex items-center justify-between mb-4 pb-2 border-b border-zinc-100">
+            <h3 className="font-heading text-sm font-semibold tracking-tight text-zinc-800">
+              Konfigurasi Lowongan
+            </h3>
+            {!editingMeta ? (
+              <Button
+                onClick={startEditingMeta}
+                variant="outline"
+                size="sm"
+                className="rounded-sm border-zinc-300 h-7 text-xs"
+                data-testid="edit-meta-button"
+              >
+                <Pencil size={12} className="mr-1" /> Edit
+              </Button>
+            ) : (
+              <div className="flex gap-1.5">
+                <Button
+                  onClick={() => setEditingMeta(false)}
+                  variant="outline"
+                  size="sm"
+                  className="rounded-sm border-zinc-300 h-7 text-xs"
+                >
+                  Batal
+                </Button>
+                <Button
+                  onClick={saveMeta}
+                  disabled={
+                    Number(metaForm.must_have) +
+                    Number(metaForm.experience) +
+                    Number(metaForm.domain) +
+                    Number(metaForm.education) +
+                    Number(metaForm.nice_have) !== 100
+                  }
+                  size="sm"
+                  className="rounded-sm h-7 text-xs bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50"
+                  data-testid="save-meta-button"
+                >
+                  <Save size={12} className="mr-1" /> Simpan
+                </Button>
+              </div>
+            )}
           </div>
+          {!editingMeta ? (
+            <TooltipProvider>
+              <div className="space-y-3 text-sm">
+                <Meta label="Status" value={job.status} />
+                <Meta label="Min. Pengalaman" value={`${job.min_experience_years} tahun`} />
+                <MetaWithTooltip
+                  label="Bobot Pengalaman"
+                  value={`${job.weights?.must_have || 40}%`}
+                  tooltip="Mengukur kecocokan kandidat terhadap kriteria wajib/pengalaman utama (Must-Have). Nilai kriteria wajib (bobot 1-5) akan mempengaruhi skor ini secara semantik."
+                />
+                <MetaWithTooltip
+                  label="Bobot Wajib"
+                  value={`${job.weights?.nice_have || 10}%`}
+                  tooltip="Mengukur kecocokan kandidat terhadap kriteria opsional/tambahan (Nice-to-Have) yang menjadi nilai tambah."
+                />
+                <MetaWithTooltip
+                  label="Bobot Pendidikan"
+                  value={`${job.weights?.education || 5}%`}
+                  tooltip="Mengukur kesesuaian jenjang pendidikan minimum (S1/S2/dll) dan jurusan kandidat. Distribusi bobot jenjang vs jurusan dapat diubah di panel Pendidikan."
+                />
+                <MetaWithTooltip
+                  label="Bobot Domain"
+                  value={`${job.weights?.domain || 15}%`}
+                  tooltip="Mengukur pemahaman industri atau domain keahlian kandidat berdasarkan riwayat kerja dan deskripsi pekerjaan."
+                />
+                <MetaWithTooltip
+                  label="Threshold Shortlist"
+                  value={`≥ ${job.weights?.shortlist_threshold || 75}`}
+                  tooltip="Skor total minimum (skala 0-100) yang harus dicapai oleh kandidat agar direkomendasikan masuk ke daftar pendek (Shortlist)."
+                />
+              </div>
+            </TooltipProvider>
+          ) : (
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Status</label>
+                <select
+                  value={metaForm.status}
+                  onChange={(e) => setMetaForm({ ...metaForm, status: e.target.value })}
+                  className="w-full border border-zinc-300 rounded-sm text-sm h-8 px-2 mt-1"
+                  data-testid="edit-status-select"
+                >
+                  <option value="draft">draft</option>
+                  <option value="active">active</option>
+                  <option value="closed">closed</option>
+                  <option value="archived">archived</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Min. Pengalaman (Tahun)</label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={metaForm.min_experience_years}
+                  onChange={(e) => setMetaForm({ ...metaForm, min_experience_years: parseInt(e.target.value) || 0 })}
+                  className="h-8 mt-1 rounded-sm text-sm"
+                  data-testid="edit-experience-input"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-zinc-100">
+                <div className="flex justify-between items-baseline mb-1">
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Bobot Dimensi Penilaian</span>
+                  <span className={`text-xs font-mono font-bold ${
+                    Number(metaForm.must_have) +
+                    Number(metaForm.domain) +
+                    Number(metaForm.education) +
+                    Number(metaForm.nice_have) === 100 ? "text-emerald-600" : "text-rose-600"
+                  }`}>
+                    Total: {
+                      Number(metaForm.must_have) +
+                      Number(metaForm.domain) +
+                      Number(metaForm.education) +
+                      Number(metaForm.nice_have)
+                    }% / 100%
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div>
+                    <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Pengalaman (%)</label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={metaForm.must_have}
+                      onChange={(e) => setMetaForm({ ...metaForm, must_have: parseInt(e.target.value) || 0 })}
+                      className="h-8 mt-1 rounded-sm text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Wajib (%)</label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={metaForm.nice_have}
+                      onChange={(e) => setMetaForm({ ...metaForm, nice_have: parseInt(e.target.value) || 0 })}
+                      className="h-8 mt-1 rounded-sm text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Pendidikan (%)</label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={metaForm.education}
+                      onChange={(e) => setMetaForm({ ...metaForm, education: parseInt(e.target.value) || 0 })}
+                      className="h-8 mt-1 rounded-sm text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Domain (%)</label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={metaForm.domain}
+                      onChange={(e) => setMetaForm({ ...metaForm, domain: parseInt(e.target.value) || 0 })}
+                      className="h-8 mt-1 rounded-sm text-sm"
+                    />
+                  </div>
+                </div>
+
+                {Number(metaForm.must_have) +
+                 Number(metaForm.domain) +
+                 Number(metaForm.education) +
+                 Number(metaForm.nice_have) !== 100 && (
+                  <p className="text-[10px] text-rose-500 mt-2 italic font-medium">
+                    *Jumlah keempat bobot di atas harus tepat bernilai 100% agar dapat disimpan.
+                  </p>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-zinc-100">
+                <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Threshold Shortlist (0-100)</label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={metaForm.shortlist_threshold}
+                  onChange={(e) => setMetaForm({ ...metaForm, shortlist_threshold: parseInt(e.target.value) || 0 })}
+                  className="h-8 mt-1 rounded-sm text-sm"
+                  data-testid="edit-threshold-input"
+                />
+              </div>
+            </div>
+          )}
+
           <div className="text-xs text-zinc-400 mt-3 pt-3 border-t border-zinc-200">
-            Setelah mengedit kriteria, klik <span className="font-medium text-zinc-700">Unggah CV</span> baru
-            atau gunakan <span className="font-medium text-zinc-700">Saran dari Pool</span> agar bobot baru
-            diterapkan ke scoring.
+            Setelah mengedit kriteria atau konfigurasi, unggah CV baru agar bobot baru diterapkan.
           </div>
         </div>
       </div>
@@ -229,7 +515,9 @@ export default function JobDetail() {
             ) : (
               filtered.map((c, idx) => {
                 const isProcessing =
-                  c.candidate_status === "pending" || c.candidate_status === "processing";
+                  c.candidate_status === "pending" ||
+                  c.candidate_status === "processing" ||
+                  (c.candidate_status === "parsed" && !c.id);
                 const isFailed = c.candidate_status === "failed";
                 return (
                   <tr
@@ -247,7 +535,16 @@ export default function JobDetail() {
                     </td>
                     <td className="px-5 py-3 text-center">
                       {isProcessing ? (
-                        <span className="text-xs text-amber-700 font-medium">Memproses...</span>
+                        <span className="text-xs text-amber-700 font-medium inline-flex items-center gap-1.5 justify-center w-full animate-pulse">
+                          <RotateCw size={10} className="animate-spin shrink-0" />
+                          {c.candidate_status === "pending" ? (
+                            "Menunggu..."
+                          ) : c.candidate_status === "processing" ? (
+                            "Mengekstrak..."
+                          ) : (
+                            "Menilai..."
+                          )}
+                        </span>
                       ) : isFailed ? (
                         <span className="text-xs text-rose-700 font-medium">Gagal</span>
                       ) : (
@@ -271,18 +568,33 @@ export default function JobDetail() {
                       )}
                     </td>
                     <td className="px-5 py-3 text-right">
-                      {c.id && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/screenings/${c.id}`);
-                          }}
-                          data-testid={`view-screening-${c.id}`}
-                          className="text-xs px-2.5 py-1 rounded-sm border border-zinc-300 text-zinc-700 hover:bg-zinc-900 hover:text-white hover:border-zinc-900 transition-colors font-medium"
-                        >
-                          Detail →
-                        </button>
-                      )}
+                      <div className="flex justify-end gap-2">
+                        {c.candidate_id && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteCandidate(c.candidate_id);
+                            }}
+                            data-testid={`delete-candidate-${c.candidate_id}`}
+                            className="text-xs px-2.5 py-1 rounded-sm border border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 transition-colors font-medium flex items-center justify-center"
+                            title="Hapus Kandidat"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                        {c.id && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/screenings/${c.id}`);
+                            }}
+                            data-testid={`view-screening-${c.id}`}
+                            className="text-xs px-2.5 py-1 rounded-sm border border-zinc-300 text-zinc-700 hover:bg-zinc-900 hover:text-white hover:border-zinc-900 transition-colors font-medium"
+                          >
+                            Detail →
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -446,6 +758,25 @@ function Meta({ label, value }) {
   return (
     <div className="flex justify-between items-baseline gap-3">
       <span className="text-xs text-zinc-500 uppercase tracking-wider">{label}</span>
+      <span className="text-xs font-medium text-zinc-900 text-right">{value}</span>
+    </div>
+  );
+}
+
+function MetaWithTooltip({ label, value, tooltip }) {
+  return (
+    <div className="flex justify-between items-baseline gap-3">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button className="text-xs text-zinc-500 hover:text-zinc-900 font-normal uppercase tracking-wider inline-flex items-center gap-1 text-left decoration-dotted underline underline-offset-2 cursor-help">
+            {label}
+            <HelpCircle size={10} className="text-zinc-400 shrink-0" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[240px] text-left bg-zinc-900 text-white rounded p-2 text-xs shadow-md">
+          <p>{tooltip}</p>
+        </TooltipContent>
+      </Tooltip>
       <span className="text-xs font-medium text-zinc-900 text-right">{value}</span>
     </div>
   );

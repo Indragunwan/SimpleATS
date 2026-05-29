@@ -123,18 +123,17 @@ async def call_llm(
 
 # ============ JD EXTRACTION ============
 JD_SYSTEM_PROMPT = """Anda adalah HR Analyst senior yang sangat teliti.
-Tugas Anda: ekstrak kriteria terstruktur dari teks Job Description (JD) yang diberikan.
+Tugas Anda: ekstrak kriteria terstruktur dari Teks JD / Tanggung Jawab dan Teks Spesifikasi / Kualifikasi yang diberikan.
 
 Output Anda WAJIB berupa JSON valid dengan struktur berikut (tanpa teks lain, tanpa markdown):
 {
   "target_position": "Nama jabatan yang dicari",
   "department": "Departemen jika disebut, kosong jika tidak",
   "min_experience_years": <integer, minimum tahun pengalaman, 0 jika tidak disebut>,
-  "education_level": "Jenjang minimum (SMA/SMK | D3 | D4 | S1 | S2 | S3). Kosong jika tidak disebut.",
-  "education_major": "Jurusan yang diminta, atau 'Semua jurusan' jika tidak spesifik. Kosong jika tidak disebut sama sekali.",
-  "responsibilities": ["Tanggung jawab 1", "Tanggung jawab 2", ...],
-  "must_have": ["Keahlian/kualifikasi wajib 1", ...],
-  "nice_to_have": ["Keahlian tambahan 1", ...]
+  "education_level": "Jenjang pendidikan minimum (SMA/SMK | D3 | D4 | S1 | S2 | S3). Ekstrak secara terpisah dari spesifikasi. Kosong jika tidak disebut.",
+  "education_major": "Jurusan pendidikan yang diminta, atau 'Semua jurusan' jika tidak spesifik. Kosong jika tidak disebut.",
+  "must_have": ["Daftar poin Tanggung Jawab Utama (Job Responsibilities), pecah ke masing-masing baris dan rapikan"],
+  "nice_to_have": ["Daftar poin Spesifikasi, Kualifikasi, atau Persyaratan tambahan, pecah ke masing-masing baris dan rapikan (TIDAK TERMASUK jenjang pendidikan yang sudah dipisah ke education_level)"]
 }
 Gunakan Bahasa Indonesia untuk nilai field. Jangan hallucinate."""
 
@@ -187,7 +186,10 @@ Jika data tidak ada, gunakan string kosong atau array kosong. Jangan hallucinate
 
 
 async def parse_cv(cv_text: str, config: Optional[dict] = None) -> dict:
-    user_msg = f"Parse CV berikut:\n\n---\n{cv_text[:10000]}\n---\n\nKembalikan JSON saja."
+    import re
+    cleaned_text = re.sub(r'[ \t]+', ' ', cv_text)
+    cleaned_text = re.sub(r'\n+', '\n', cleaned_text).strip()
+    user_msg = f"Parse CV berikut:\n\n---\n{cleaned_text[:8000]}\n---\n\nKembalikan JSON saja."
     raw = await call_llm(CV_SYSTEM_PROMPT, user_msg, config)
     parsed = _extract_json(raw) or {}
     return {

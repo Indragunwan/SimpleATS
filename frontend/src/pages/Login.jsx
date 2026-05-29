@@ -32,7 +32,7 @@ export default function Login() {
 
   const fillDemo = (em) => {
     setEmail(em);
-    setPassword("demo123");
+    setPassword("123");
   };
 
   return (
@@ -140,7 +140,7 @@ export default function Login() {
                   <span className="text-zinc-500">{d.role}</span>
                 </button>
               ))}
-              <div className="text-xs text-zinc-400 font-mono pt-1">Password: demo123</div>
+              <div className="text-xs text-zinc-400 font-mono pt-1">Password: 123</div>
             </div>
           </div>
         </div>

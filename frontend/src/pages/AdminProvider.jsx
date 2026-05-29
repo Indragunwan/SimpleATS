@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Check, Plus, Zap, Cpu, Brain, Save, Trash2 } from "lucide-react";
+import { Check, Plus, Zap, Cpu, Brain, Save, Trash2, Edit, X } from "lucide-react";
 
 export default function AdminProvider() {
   const [providers, setProviders] = useState([]);
@@ -15,6 +15,13 @@ export default function AdminProvider() {
   const [testing, setTesting] = useState(false);
   const [savingAssign, setSavingAssign] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [editingProvider, setEditingProvider] = useState(null);
+  const [editOpen, setEditOpen] = useState(false);
+
+  const triggerEdit = (p) => {
+    setEditingProvider(p);
+    setEditOpen(true);
+  };
 
   const load = async () => {
     setLoading(true);
@@ -43,6 +50,12 @@ export default function AdminProvider() {
     load();
   };
 
+  const deactivate = async (id) => {
+    await api.patch(`/config/ai-providers/${id}`, { is_active: false });
+    toast.success("Provider dinonaktifkan");
+    load();
+  };
+
   const saveAssignments = async () => {
     setSavingAssign(true);
     try {
@@ -61,15 +74,11 @@ export default function AdminProvider() {
   const handleTest = async (p) => {
     setTesting(true);
     try {
-      const { data } = await api.post("/config/ai-providers/test", {
-        provider_type: p.provider_type,
-        base_url: p.base_url || "",
-        api_key: p.api_key && !p.api_key.startsWith("***") ? p.api_key : "",
-        llm_provider: p.llm_provider,
-        model_name: p.model_name,
-      });
+      const { data } = await api.post(`/config/ai-providers/${p.id}/test`);
       if (data.success) toast.success("Koneksi berhasil: " + data.response);
       else toast.error("Koneksi gagal: " + data.error);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Gagal mengetes koneksi");
     } finally {
       setTesting(false);
     }
@@ -200,27 +209,46 @@ export default function AdminProvider() {
                   >
                     <Zap size={12} className="mr-1" /> Test Koneksi
                   </Button>
-                  {!p.is_active && (
-                    <>
-                      <Button
-                        onClick={() => activate(p.id)}
-                        size="sm"
-                        className="rounded-sm bg-zinc-900 hover:bg-zinc-800"
-                        data-testid={`activate-provider-${p.id}`}
-                      >
-                        <Check size={12} className="mr-1" /> Aktifkan
-                      </Button>
-                      <Button
-                        onClick={() => handleDelete(p.id)}
-                        variant="destructive"
-                        size="sm"
-                        className="rounded-sm bg-red-600 hover:bg-red-700 text-white"
-                        data-testid={`delete-provider-${p.id}`}
-                      >
-                        <Trash2 size={12} className="mr-1" /> Hapus
-                      </Button>
-                    </>
+                  <Button
+                    onClick={() => triggerEdit(p)}
+                    variant="outline"
+                    size="sm"
+                    className="rounded-sm border-zinc-300"
+                    data-testid={`edit-provider-${p.id}`}
+                  >
+                    <Edit size={12} className="mr-1" /> Edit
+                  </Button>
+                  {p.is_active ? (
+                    <Button
+                      onClick={() => deactivate(p.id)}
+                      size="sm"
+                      variant="outline"
+                      className="rounded-sm border-zinc-300 text-zinc-700 hover:bg-zinc-50"
+                      data-testid={`deactivate-provider-${p.id}`}
+                    >
+                      <X size={12} className="mr-1" /> Nonaktifkan
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => activate(p.id)}
+                      size="sm"
+                      className="rounded-sm bg-zinc-900 hover:bg-zinc-800"
+                      data-testid={`activate-provider-${p.id}`}
+                    >
+                      <Check size={12} className="mr-1" /> Aktifkan
+                    </Button>
                   )}
+                  <Button
+                    onClick={() => handleDelete(p.id)}
+                    variant="destructive"
+                    size="sm"
+                    disabled={p.is_active}
+                    title={p.is_active ? "Tidak bisa menghapus provider yang sedang aktif" : "Hapus provider"}
+                    className="rounded-sm bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    data-testid={`delete-provider-${p.id}`}
+                  >
+                    <Trash2 size={12} className="mr-1" /> Hapus
+                  </Button>
                 </div>
               </div>
 
@@ -233,6 +261,14 @@ export default function AdminProvider() {
             </div>
           ))}
         </div>
+      )}
+      {editingProvider && (
+        <EditProviderDialog
+          provider={editingProvider}
+          onUpdated={load}
+          open={editOpen}
+          setOpen={setEditOpen}
+        />
       )}
     </div>
   );
@@ -421,6 +457,224 @@ function AddProviderDialog({ onCreated }) {
                 Batal
               </Button>
               <Button type="submit" className="rounded-sm bg-zinc-900 hover:bg-zinc-800" data-testid="submit-provider">
+                Simpan
+              </Button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditProviderDialog({ provider, onUpdated, open, setOpen }) {
+  const [testingConn, setTestingConn] = useState(false);
+  const [form, setForm] = useState({
+    name: provider.name || "",
+    provider_type: provider.provider_type || "custom",
+    base_url: provider.base_url || "",
+    api_key: provider.api_key || "",
+    llm_provider: provider.llm_provider || "openai",
+    model_name: provider.model_name || "gpt-4o-mini",
+    temperature: provider.temperature ?? 0.2,
+    max_tokens: provider.max_tokens ?? 4000,
+  });
+
+  useEffect(() => {
+    if (provider) {
+      setForm({
+        name: provider.name || "",
+        provider_type: provider.provider_type || "custom",
+        base_url: provider.base_url || "",
+        api_key: provider.api_key || "",
+        llm_provider: provider.llm_provider || "openai",
+        model_name: provider.model_name || "gpt-4o-mini",
+        temperature: provider.temperature ?? 0.2,
+        max_tokens: provider.max_tokens ?? 4000,
+      });
+    }
+  }, [provider]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = { ...form };
+      if (payload.api_key && payload.api_key.startsWith("***")) {
+        delete payload.api_key;
+      }
+      await api.patch(`/config/ai-providers/${provider.id}`, payload);
+      toast.success("Provider berhasil diperbarui");
+      setOpen(false);
+      onUpdated();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Gagal memperbarui provider");
+    }
+  };
+
+  const testConnection = async () => {
+    setTestingConn(true);
+    try {
+      let res;
+      if (form.api_key && form.api_key.startsWith("***")) {
+        res = await api.post(`/config/ai-providers/${provider.id}/test`);
+      } else {
+        res = await api.post("/config/ai-providers/test", {
+          provider_type: form.provider_type,
+          base_url: form.base_url || "",
+          api_key: form.api_key || "",
+          llm_provider: form.llm_provider,
+          model_name: form.model_name,
+        });
+      }
+      const data = res.data;
+      if (data.success) {
+        toast.success("Koneksi berhasil: " + data.response);
+      } else {
+        toast.error("Koneksi gagal: " + data.error);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Terjadi kesalahan saat mengetes koneksi");
+    } finally {
+      setTestingConn(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" data-testid="edit-provider-dialog">
+      <div className="bg-white rounded-sm border border-zinc-200 w-full max-w-md p-6">
+        <h3 className="font-heading text-lg font-semibold tracking-tight mb-4">Edit Provider</h3>
+        <form onSubmit={submit} className="space-y-3">
+          <div>
+            <Label className="text-xs uppercase">Nama</Label>
+            <Input
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="Contoh: OpenAI Production"
+              className="rounded-sm mt-1"
+              required
+              data-testid="edit-provider-name-input"
+            />
+          </div>
+          <div>
+            <Label className="text-xs uppercase">Base URL</Label>
+            <Input
+              value={form.base_url}
+              onChange={(e) => setForm({ ...form, base_url: e.target.value })}
+              placeholder="https://api.openai.com/v1"
+              className="rounded-sm mt-1 font-mono"
+              data-testid="edit-provider-baseurl-input"
+            />
+          </div>
+          <div>
+            <Label className="text-xs uppercase">API Key</Label>
+            <Input
+              type="password"
+              value={form.api_key}
+              onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+              placeholder="Biarkan apa adanya jika tidak ingin diubah"
+              className="rounded-sm mt-1 font-mono"
+              data-testid="edit-provider-apikey-input"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs uppercase">Provider</Label>
+              <select
+                value={form.llm_provider}
+                onChange={(e) => setForm({ ...form, llm_provider: e.target.value })}
+                className="w-full border border-zinc-300 rounded-sm text-sm h-10 px-3 mt-1"
+                data-testid="edit-provider-llm-select"
+              >
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="gemini">Gemini</option>
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs uppercase">Model</Label>
+              <Input
+                value={form.model_name}
+                onChange={(e) => setForm({ ...form, model_name: e.target.value })}
+                className="rounded-sm mt-1 font-mono text-xs"
+                data-testid="edit-provider-model-input"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs uppercase">Temperature</Label>
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                max="2"
+                value={form.temperature}
+                onChange={(e) => setForm({ ...form, temperature: parseFloat(e.target.value) || 0 })}
+                className="rounded-sm mt-1"
+                data-testid="edit-provider-temp-input"
+              />
+            </div>
+            <div>
+              <Label className="text-xs uppercase">Max Tokens</Label>
+              <Input
+                type="number"
+                value={form.max_tokens}
+                onChange={(e) => setForm({ ...form, max_tokens: parseInt(e.target.value) || 0 })}
+                className="rounded-sm mt-1"
+                data-testid="edit-provider-tokens-input"
+              />
+            </div>
+          </div>
+          <div className="flex justify-between items-center pt-2">
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                onClick={testConnection}
+                disabled={testingConn}
+                variant="outline"
+                size="sm"
+                className="rounded-sm border-zinc-300"
+                data-testid="edit-dialog-test-connection"
+              >
+                <Zap size={12} className="mr-1" />
+                {testingConn ? "Mengetes..." : "Test Koneksi"}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={provider.is_active}
+                title={provider.is_active ? "Tidak bisa menghapus provider yang sedang aktif" : "Hapus provider"}
+                onClick={async () => {
+                  if (window.confirm("Apakah Anda yakin ingin menghapus provider ini?")) {
+                    try {
+                      await api.delete(`/config/ai-providers/${provider.id}`);
+                      toast.success("Provider berhasil dihapus");
+                      setOpen(false);
+                      onUpdated();
+                    } catch (err) {
+                      toast.error(err.response?.data?.detail || "Gagal menghapus provider");
+                    }
+                  }
+                }}
+                className="rounded-sm bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="edit-dialog-delete-provider"
+              >
+                <Trash2 size={12} className="mr-1" /> Hapus
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOpen(false)}
+                className="rounded-sm border-zinc-300"
+              >
+                Batal
+              </Button>
+              <Button type="submit" className="rounded-sm bg-zinc-900 hover:bg-zinc-800" data-testid="edit-submit-provider">
                 Simpan
               </Button>
             </div>

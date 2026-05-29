@@ -227,3 +227,96 @@ class TestConnectionRequest(BaseModel):
     api_key: str = ""
     llm_provider: str = "anthropic"
     model_name: str = "claude-sonnet-4-6"
+
+
+# ============ SQLALCHEMY ORM MODELS ============
+from sqlalchemy import Column, String, Integer, Float, Boolean, Text, JSON
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
+
+class DBUser(Base):
+    __tablename__ = "users"
+    id = Column(String(36), primary_key=True)
+    name = Column(String(255), nullable=False)
+    email = Column(String(255), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(50), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(String(50), nullable=False)
+
+class DBJobPosting(Base):
+    __tablename__ = "job_postings"
+    id = Column(String(36), primary_key=True)
+    title = Column(String(255), nullable=False)
+    department = Column(String(255), default="")
+    raw_jd_text = Column(Text, nullable=False)
+    file_name = Column(String(255))
+    target_position = Column(String(255), default="")
+    min_experience_years = Column(Integer, default=0)
+    education_requirement = Column(String(255), default="")
+    education_level = Column(String(50), default="")
+    education_major = Column(String(255), default="")
+    responsibilities = Column(JSON)
+    criteria = Column(JSON)
+    weights = Column(JSON)
+    status = Column(String(50), default="draft")
+    created_by = Column(String(36), nullable=False)
+    created_at = Column(String(50), nullable=False)
+    extraction_status = Column(String(50), default="processing")
+    extraction_error = Column(Text)
+
+class DBCandidate(Base):
+    __tablename__ = "candidates"
+    id = Column(String(36), primary_key=True)
+    name = Column(String(255), default="Unknown")
+    email = Column(String(255), default="")
+    phone = Column(String(50), default="")
+    file_name = Column(String(255), default="")
+    raw_text = Column(Text)
+    parsed = Column(JSON)
+    status = Column(String(50), default="pending")
+    error_message = Column(Text)
+    created_at = Column(String(50), nullable=False)
+    job_posting_id = Column(String(36), nullable=False)
+
+class DBScreeningResult(Base):
+    __tablename__ = "screening_results"
+    id = Column(String(36), primary_key=True)
+    job_posting_id = Column(String(36), nullable=False)
+    candidate_id = Column(String(36), nullable=False)
+    total_score = Column(Integer, default=0)
+    must_have = Column(JSON)
+    experience = Column(JSON)
+    domain = Column(JSON)
+    education = Column(JSON)
+    nice_have = Column(JSON)
+    recommendation = Column(String(50), default="review")
+    rationale_summary = Column(Text)
+    strengths = Column(JSON)
+    gaps_summary = Column(JSON)
+    decision = Column(String(50), default="pending")
+    decided_by = Column(String(36))
+    decided_at = Column(String(50))
+    created_at = Column(String(50), nullable=False)
+
+class DBAIProviderConfig(Base):
+    __tablename__ = "ai_provider_configs"
+    id = Column(String(36), primary_key=True)
+    name = Column(String(255), nullable=False)
+    provider_type = Column(String(50), default="emergent")
+    base_url = Column(String(255), default="")
+    api_key = Column(String(255), default="")
+    llm_provider = Column(String(50), default="anthropic")
+    model_name = Column(String(50), default="claude-sonnet-4-6")
+    temperature = Column(Float, default=0.2)
+    max_tokens = Column(Integer, default=4000)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(String(50), nullable=False)
+
+class DBSystemSettings(Base):
+    __tablename__ = "system_settings"
+    id = Column(String(50), primary_key=True)
+    parsing_provider_id = Column(String(36))
+    scoring_provider_id = Column(String(36))
+
