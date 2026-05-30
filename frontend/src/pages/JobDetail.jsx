@@ -108,7 +108,7 @@ export default function JobDetail() {
       status: job.status || "draft",
       min_experience_years: job.min_experience_years || 0,
       must_have: job.weights?.must_have ?? 40,
-      experience: 0,
+      experience: job.weights?.experience ?? 30,
       domain: job.weights?.domain ?? 15,
       education: job.weights?.education ?? 5,
       nice_have: job.weights?.nice_have ?? 10,
@@ -120,6 +120,7 @@ export default function JobDetail() {
   const saveMeta = async () => {
     const totalWeights =
       Number(metaForm.must_have) +
+      Number(metaForm.experience) +
       Number(metaForm.domain) +
       Number(metaForm.education) +
       Number(metaForm.nice_have);
@@ -135,7 +136,7 @@ export default function JobDetail() {
         min_experience_years: Number(metaForm.min_experience_years),
         weights: {
           must_have: Number(metaForm.must_have),
-          experience: 0,
+          experience: Number(metaForm.experience),
           domain: Number(metaForm.domain),
           education: Number(metaForm.education),
           nice_have: Number(metaForm.nice_have),
@@ -338,25 +339,25 @@ export default function JobDetail() {
             <Sparkles size={14} className="mr-1.5" /> Saran dari Pool
           </Button>
           {user?.role !== "hr_recruiter" && (
-              <Button
-            variant="outline"
-            onClick={handleReextract}
-            className="rounded-sm border-zinc-300"
-            data-testid="reextract-button"
-          >
-            <RotateCw size={14} className="mr-1.5" /> Ekstrak Ulang
-          </Button>
-            )}
+            <Button
+              variant="outline"
+              onClick={handleReextract}
+              className="rounded-sm border-zinc-300"
+              data-testid="reextract-button"
+            >
+              <RotateCw size={14} className="mr-1.5" /> Ekstrak Ulang
+            </Button>
+          )}
           {user?.role !== "hr_recruiter" && (
-              <Button
-            variant="outline"
-            onClick={handleDeleteJob}
-            className="rounded-sm border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-            data-testid="delete-job-button"
-          >
-            <Trash2 size={14} className="mr-1.5" /> Hapus Lowongan
-          </Button>
-            )}
+            <Button
+              variant="outline"
+              onClick={handleDeleteJob}
+              className="rounded-sm border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+              data-testid="delete-job-button"
+            >
+              <Trash2 size={14} className="mr-1.5" /> Hapus Lowongan
+            </Button>
+          )}
           {activeTab === "candidates" && (
             <>
               <Button
@@ -382,7 +383,7 @@ export default function JobDetail() {
         </div>
       </header>
 
-      
+
       {/* Tab Navigation */}
       <div className="flex items-center gap-0 border-b border-zinc-200 mb-6">
         {TABS.map((tab) => {
@@ -409,555 +410,572 @@ export default function JobDetail() {
       </div>
 
       {activeTab === "criteria" ? (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
-        <div className="lg:col-span-2">
-          <CriteriaEditor job={job} onUpdate={load} editable={user?.role !== "hr_recruiter"} />
-        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+          <div className="lg:col-span-2">
+            <CriteriaEditor job={job} onUpdate={load} editable={user?.role !== "hr_recruiter"} />
+          </div>
 
-        <div className="bg-white border border-zinc-200 rounded-sm p-5 h-fit" data-testid="job-meta">
-          <div className="flex items-center justify-between mb-4 pb-2 border-b border-zinc-100">
-            <h3 className="font-heading text-sm font-semibold tracking-tight text-zinc-800">
-              Konfigurasi Lowongan
-            </h3>
+          <div className="bg-white border border-zinc-200 rounded-sm p-5 h-fit" data-testid="job-meta">
+            <div className="flex items-center justify-between mb-4 pb-2 border-b border-zinc-100">
+              <h3 className="font-heading text-sm font-semibold tracking-tight text-zinc-800">
+                Konfigurasi Lowongan
+              </h3>
+              {!editingMeta ? (
+                user?.role !== "hr_recruiter" && (
+                  <Button
+                    onClick={startEditingMeta}
+                    variant="outline"
+                    size="sm"
+                    className="rounded-sm border-zinc-300 h-7 text-xs"
+                    data-testid="edit-meta-button"
+                  >
+                    <Pencil size={12} className="mr-1" /> Edit
+                  </Button>
+                )
+              ) : (
+                <div className="flex gap-1.5">
+                  <Button
+                    onClick={() => setEditingMeta(false)}
+                    variant="outline"
+                    size="sm"
+                    className="rounded-sm border-zinc-300 h-7 text-xs"
+                  >
+                    Batal
+                  </Button>
+                  <Button
+                    onClick={saveMeta}
+                    disabled={
+                      Number(metaForm.must_have) +
+                      Number(metaForm.experience) +
+                      Number(metaForm.domain) +
+                      Number(metaForm.education) +
+                      Number(metaForm.nice_have) !== 100
+                    }
+                    size="sm"
+                    className="rounded-sm h-7 text-xs bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50"
+                    data-testid="save-meta-button"
+                  >
+                    <Save size={12} className="mr-1" /> Simpan
+                  </Button>
+                </div>
+              )}
+            </div>
             {!editingMeta ? (
-              user?.role !== "hr_recruiter" && (
-                <Button
-                  onClick={startEditingMeta}
-                  variant="outline"
-                  size="sm"
-                  className="rounded-sm border-zinc-300 h-7 text-xs"
-                  data-testid="edit-meta-button"
-                >
-                  <Pencil size={12} className="mr-1" /> Edit
-                </Button>
-              )
+              <TooltipProvider>
+                <div className="space-y-3 text-sm">
+                  <Meta label="Status" value={job.status} />
+                  <Meta label="Min. Pengalaman" value={`${job.min_experience_years} tahun`} />
+                  <MetaWithTooltip
+                    label="Bobot Pengalaman"
+                    value={`${job.weights?.experience ?? 30}%`}
+                    tooltip="Mengukur seberapa relevan dan lama durasi pengalaman kerja kandidat dengan posisi yang dituju."
+                  />
+                  <MetaWithTooltip
+                    label="Bobot Kriteria Wajib"
+                    value={`${job.weights?.must_have ?? 40}%`}
+                    tooltip="Mengukur kecocokan kandidat terhadap kriteria keterampilan wajib (Must-Have)."
+                  />
+                  <MetaWithTooltip
+                    label="Bobot K.Tambahan"
+                    value={`${job.weights?.nice_have || 10}%`}
+                    tooltip="Mengukur kecocokan kandidat terhadap kriteria opsional/tambahan (Nice-to-Have) yang menjadi nilai tambah."
+                  />
+                  <MetaWithTooltip
+                    label="Bobot Pendidikan"
+                    value={`${job.weights?.education || 5}%`}
+                    tooltip="Mengukur kesesuaian jenjang pendidikan minimum (S1/S2/dll) dan jurusan kandidat. Distribusi bobot jenjang vs jurusan dapat diubah di panel Pendidikan."
+                  />
+                  <MetaWithTooltip
+                    label="Bobot Domain"
+                    value={`${job.weights?.domain || 15}%`}
+                    tooltip="Mengukur pemahaman industri atau domain keahlian kandidat berdasarkan riwayat kerja dan deskripsi pekerjaan."
+                  />
+                  <MetaWithTooltip
+                    label="Threshold Shortlist"
+                    value={`≥ ${job.weights?.shortlist_threshold || 75}`}
+                    tooltip="Skor total minimum (skala 0-100) yang harus dicapai oleh kandidat agar direkomendasikan masuk ke daftar pendek (Shortlist)."
+                  />
+                </div>
+              </TooltipProvider>
             ) : (
-              <div className="flex gap-1.5">
-                <Button
-                  onClick={() => setEditingMeta(false)}
-                  variant="outline"
-                  size="sm"
-                  className="rounded-sm border-zinc-300 h-7 text-xs"
-                >
-                  Batal
-                </Button>
-                <Button
-                  onClick={saveMeta}
-                  disabled={
-                    Number(metaForm.must_have) +
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Status</label>
+                  <select
+                    value={metaForm.status}
+                    onChange={(e) => setMetaForm({ ...metaForm, status: e.target.value })}
+                    className="w-full border border-zinc-300 rounded-sm text-sm h-8 px-2 mt-1"
+                    data-testid="edit-status-select"
+                  >
+                    <option value="draft">draft</option>
+                    <option value="active">active</option>
+                    <option value="closed">closed</option>
+                    <option value="archived">archived</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Min. Pengalaman (Tahun)</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={metaForm.min_experience_years}
+                    onChange={(e) => setMetaForm({ ...metaForm, min_experience_years: parseInt(e.target.value) || 0 })}
+                    className="h-8 mt-1 rounded-sm text-sm"
+                    data-testid="edit-experience-input"
+                  />
+                </div>
+
+                <div className="pt-2 border-t border-zinc-100">
+                  <div className="flex justify-between items-baseline mb-1">
+                    <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Bobot Dimensi Penilaian</span>
+                    <span className={`text-xs font-mono font-bold ${Number(metaForm.must_have) +
+                        Number(metaForm.experience) +
+                        Number(metaForm.domain) +
+                        Number(metaForm.education) +
+                        Number(metaForm.nice_have) === 100 ? "text-emerald-600" : "text-rose-600"
+                      }`}>
+                      Total: {
+                        Number(metaForm.must_have) +
+                        Number(metaForm.experience) +
+                        Number(metaForm.domain) +
+                        Number(metaForm.education) +
+                        Number(metaForm.nice_have)
+                      }% / 100%
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
+                    <div>
+                      <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Pengalaman (%)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={metaForm.experience}
+                        onChange={(e) => setMetaForm({ ...metaForm, experience: parseInt(e.target.value) || 0 })}
+                        className="h-8 mt-1 rounded-sm text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Wajib (%)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={metaForm.must_have}
+                        onChange={(e) => setMetaForm({ ...metaForm, must_have: parseInt(e.target.value) || 0 })}
+                        className="h-8 mt-1 rounded-sm text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Tambahan (%)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={metaForm.nice_have}
+                        onChange={(e) => setMetaForm({ ...metaForm, nice_have: parseInt(e.target.value) || 0 })}
+                        className="h-8 mt-1 rounded-sm text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Pendidikan (%)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={metaForm.education}
+                        onChange={(e) => setMetaForm({ ...metaForm, education: parseInt(e.target.value) || 0 })}
+                        className="h-8 mt-1 rounded-sm text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Domain (%)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={metaForm.domain}
+                        onChange={(e) => setMetaForm({ ...metaForm, domain: parseInt(e.target.value) || 0 })}
+                        className="h-8 mt-1 rounded-sm text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {Number(metaForm.must_have) +
                     Number(metaForm.experience) +
                     Number(metaForm.domain) +
                     Number(metaForm.education) +
-                    Number(metaForm.nice_have) !== 100
-                  }
-                  size="sm"
-                  className="rounded-sm h-7 text-xs bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50"
-                  data-testid="save-meta-button"
-                >
-                  <Save size={12} className="mr-1" /> Simpan
-                </Button>
+                    Number(metaForm.nice_have) !== 100 && (
+                      <p className="text-[10px] text-rose-500 mt-2 italic font-medium">
+                        *Jumlah keempat bobot di atas harus tepat bernilai 100% agar dapat disimpan.
+                      </p>
+                    )}
+                </div>
+
+                <div className="pt-2 border-t border-zinc-100">
+                  <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Threshold Shortlist (0-100)</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={metaForm.shortlist_threshold}
+                    onChange={(e) => setMetaForm({ ...metaForm, shortlist_threshold: parseInt(e.target.value) || 0 })}
+                    className="h-8 mt-1 rounded-sm text-sm"
+                    data-testid="edit-threshold-input"
+                  />
+                </div>
               </div>
             )}
+
+            <div className="text-xs text-zinc-400 mt-3 pt-3 border-t border-zinc-200">
+              Setelah mengedit kriteria atau konfigurasi, unggah CV baru agar bobot baru diterapkan.
+            </div>
           </div>
-          {!editingMeta ? (
-            <TooltipProvider>
-              <div className="space-y-3 text-sm">
-                <Meta label="Status" value={job.status} />
-                <Meta label="Min. Pengalaman" value={`${job.min_experience_years} tahun`} />
-                <MetaWithTooltip
-                  label="Bobot Pengalaman"
-                  value={`${job.weights?.must_have || 40}%`}
-                  tooltip="Mengukur kecocokan kandidat terhadap kriteria wajib/pengalaman utama (Must-Have). Nilai kriteria wajib (bobot 1-5) akan mempengaruhi skor ini secara semantik."
-                />
-                <MetaWithTooltip
-                  label="Bobot Wajib"
-                  value={`${job.weights?.nice_have || 10}%`}
-                  tooltip="Mengukur kecocokan kandidat terhadap kriteria opsional/tambahan (Nice-to-Have) yang menjadi nilai tambah."
-                />
-                <MetaWithTooltip
-                  label="Bobot Pendidikan"
-                  value={`${job.weights?.education || 5}%`}
-                  tooltip="Mengukur kesesuaian jenjang pendidikan minimum (S1/S2/dll) dan jurusan kandidat. Distribusi bobot jenjang vs jurusan dapat diubah di panel Pendidikan."
-                />
-                <MetaWithTooltip
-                  label="Bobot Domain"
-                  value={`${job.weights?.domain || 15}%`}
-                  tooltip="Mengukur pemahaman industri atau domain keahlian kandidat berdasarkan riwayat kerja dan deskripsi pekerjaan."
-                />
-                <MetaWithTooltip
-                  label="Threshold Shortlist"
-                  value={`≥ ${job.weights?.shortlist_threshold || 75}`}
-                  tooltip="Skor total minimum (skala 0-100) yang harus dicapai oleh kandidat agar direkomendasikan masuk ke daftar pendek (Shortlist)."
+        </div>
+
+
+      ) : (
+        <div className="bg-white border border-zinc-200 rounded-sm" data-testid="candidates-section">
+          <div className="px-5 py-4 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-heading text-base font-semibold tracking-tight">
+                Ranking Kandidat
+              </h2>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                {candidates.length} total · {filtered.length} ditemukan
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {candidates.length > 0 && user?.role !== "hr_recruiter" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRescreenAllOpen(true)}
+                  className="rounded-sm border-zinc-300 text-zinc-700 hover:bg-zinc-50 h-8 text-xs font-semibold mr-1.5"
+                >
+                  <RotateCw size={12} className="mr-1.5" /> Proses Ulang Semua
+                </Button>
+              )}
+              <div className="relative">
+                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                <Input
+                  placeholder="Cari nama..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="rounded-sm h-8 text-xs pl-7 w-40"
+                  data-testid="candidate-search"
                 />
               </div>
-            </TooltipProvider>
-          ) : (
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Status</label>
+              <select
+                value={minScore}
+                onChange={(e) => setMinScore(Number(e.target.value))}
+                className="border border-zinc-300 rounded-sm text-xs h-8 px-2"
+                data-testid="min-score-filter"
+              >
+                <option value={0}>Semua skor</option>
+                <option value={40}>Min 40</option>
+                <option value={60}>Min 60</option>
+                <option value={75}>Min 75 (Shortlist)</option>
+              </select>
+              <div className="flex items-center gap-1.5 ml-2">
+                <span className="text-xs text-zinc-500">Tampilkan:</span>
                 <select
-                  value={metaForm.status}
-                  onChange={(e) => setMetaForm({ ...metaForm, status: e.target.value })}
-                  className="w-full border border-zinc-300 rounded-sm text-sm h-8 px-2 mt-1"
-                  data-testid="edit-status-select"
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="border border-zinc-300 rounded-sm text-xs h-8 px-2"
                 >
-                  <option value="draft">draft</option>
-                  <option value="active">active</option>
-                  <option value="closed">closed</option>
-                  <option value="archived">archived</option>
+                  <option value={10}>10 data</option>
+                  <option value={15}>15 data</option>
+                  <option value={30}>30 data</option>
+                  <option value={50}>50 data</option>
                 </select>
               </div>
-
-              <div>
-                <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Min. Pengalaman (Tahun)</label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={metaForm.min_experience_years}
-                  onChange={(e) => setMetaForm({ ...metaForm, min_experience_years: parseInt(e.target.value) || 0 })}
-                  className="h-8 mt-1 rounded-sm text-sm"
-                  data-testid="edit-experience-input"
-                />
-              </div>
-
-              <div className="pt-2 border-t border-zinc-100">
-                <div className="flex justify-between items-baseline mb-1">
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Bobot Dimensi Penilaian</span>
-                  <span className={`text-xs font-mono font-bold ${
-                    Number(metaForm.must_have) +
-                    Number(metaForm.domain) +
-                    Number(metaForm.education) +
-                    Number(metaForm.nice_have) === 100 ? "text-emerald-600" : "text-rose-600"
-                  }`}>
-                    Total: {
-                      Number(metaForm.must_have) +
-                      Number(metaForm.domain) +
-                      Number(metaForm.education) +
-                      Number(metaForm.nice_have)
-                    }% / 100%
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  <div>
-                    <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Pengalaman (%)</label>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={metaForm.must_have}
-                      onChange={(e) => setMetaForm({ ...metaForm, must_have: parseInt(e.target.value) || 0 })}
-                      className="h-8 mt-1 rounded-sm text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Wajib (%)</label>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={metaForm.nice_have}
-                      onChange={(e) => setMetaForm({ ...metaForm, nice_have: parseInt(e.target.value) || 0 })}
-                      className="h-8 mt-1 rounded-sm text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Pendidikan (%)</label>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={metaForm.education}
-                      onChange={(e) => setMetaForm({ ...metaForm, education: parseInt(e.target.value) || 0 })}
-                      className="h-8 mt-1 rounded-sm text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[9px] uppercase tracking-wider text-zinc-500">Bobot Domain (%)</label>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={metaForm.domain}
-                      onChange={(e) => setMetaForm({ ...metaForm, domain: parseInt(e.target.value) || 0 })}
-                      className="h-8 mt-1 rounded-sm text-sm"
-                    />
-                  </div>
-                </div>
-
-                {Number(metaForm.must_have) +
-                 Number(metaForm.domain) +
-                 Number(metaForm.education) +
-                 Number(metaForm.nice_have) !== 100 && (
-                  <p className="text-[10px] text-rose-500 mt-2 italic font-medium">
-                    *Jumlah keempat bobot di atas harus tepat bernilai 100% agar dapat disimpan.
-                  </p>
-                )}
-              </div>
-
-              <div className="pt-2 border-t border-zinc-100">
-                <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Threshold Shortlist (0-100)</label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={metaForm.shortlist_threshold}
-                  onChange={(e) => setMetaForm({ ...metaForm, shortlist_threshold: parseInt(e.target.value) || 0 })}
-                  className="h-8 mt-1 rounded-sm text-sm"
-                  data-testid="edit-threshold-input"
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="text-xs text-zinc-400 mt-3 pt-3 border-t border-zinc-200">
-            Setelah mengedit kriteria atau konfigurasi, unggah CV baru agar bobot baru diterapkan.
-          </div>
-        </div>
-      </div>
-
-      
-      ) : (
-      <div className="bg-white border border-zinc-200 rounded-sm" data-testid="candidates-section">
-        <div className="px-5 py-4 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-heading text-base font-semibold tracking-tight">
-              Ranking Kandidat
-            </h2>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              {candidates.length} total · {filtered.length} ditemukan
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {candidates.length > 0 && user?.role !== "hr_recruiter" && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setRescreenAllOpen(true)}
-                className="rounded-sm border-zinc-300 text-zinc-700 hover:bg-zinc-50 h-8 text-xs font-semibold mr-1.5"
-              >
-                <RotateCw size={12} className="mr-1.5" /> Proses Ulang Semua
-              </Button>
-            )}
-            <div className="relative">
-              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-              <Input
-                placeholder="Cari nama..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="rounded-sm h-8 text-xs pl-7 w-40"
-                data-testid="candidate-search"
-              />
-            </div>
-            <select
-              value={minScore}
-              onChange={(e) => setMinScore(Number(e.target.value))}
-              className="border border-zinc-300 rounded-sm text-xs h-8 px-2"
-              data-testid="min-score-filter"
-            >
-              <option value={0}>Semua skor</option>
-              <option value={40}>Min 40</option>
-              <option value={60}>Min 60</option>
-              <option value={75}>Min 75 (Shortlist)</option>
-            </select>
-            <div className="flex items-center gap-1.5 ml-2">
-              <span className="text-xs text-zinc-500">Tampilkan:</span>
-              <select
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setCurrentPage(1);
-                }}
-                className="border border-zinc-300 rounded-sm text-xs h-8 px-2"
-              >
-                <option value={10}>10 data</option>
-                <option value={15}>15 data</option>
-                <option value={30}>30 data</option>
-                <option value={50}>50 data</option>
-              </select>
             </div>
           </div>
-        </div>
 
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50/60 border-b border-zinc-200">
-            <tr className="text-left">
-              <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide w-10">#</th>
-              <th 
-                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
-                onClick={() => handleSort("candidate_name")}
-              >
-                <div className="flex items-center gap-1">
-                  <span>Kandidat</span>
-                  {sortConfig.key === "candidate_name" ? (
-                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
-                </div>
-              </th>
-              <th 
-                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none text-center"
-                onClick={() => handleSort("total_score")}
-              >
-                <div className="flex items-center justify-center gap-1">
-                  <span>Skor</span>
-                  {sortConfig.key === "total_score" ? (
-                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
-                </div>
-              </th>
-              <th 
-                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
-                onClick={() => handleSort("must_have")}
-              >
-                <div className="flex items-center gap-1">
-                  <span>Must</span>
-                  {sortConfig.key === "must_have" ? (
-                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
-                </div>
-              </th>
-              <th 
-                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
-                onClick={() => handleSort("experience")}
-              >
-                <div className="flex items-center gap-1">
-                  <span>Pengalaman</span>
-                  {sortConfig.key === "experience" ? (
-                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
-                </div>
-              </th>
-              <th 
-                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
-                onClick={() => handleSort("recommendation")}
-              >
-                <div className="flex items-center gap-1">
-                  <span>Rekomendasi</span>
-                  {sortConfig.key === "recommendation" ? (
-                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
-                </div>
-              </th>
-              <th 
-                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
-                onClick={() => handleSort("decision")}
-              >
-                <div className="flex items-center gap-1">
-                  <span>Keputusan</span>
-                  {sortConfig.key === "decision" ? (
-                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
-                </div>
-              </th>
-              <th 
-                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none text-center w-32"
-                onClick={() => handleSort("total_tokens")}
-                title="Total token yang digunakan & estimasi biaya pemrosesan AI dalam Rupiah (model Gemini 2.5 Flash, kurs $1 = Rp17.900)"
-              >
-                <div className="flex items-center justify-center gap-1">
-                  <span>Token & Est. Rp</span>
-                  {sortConfig.key === "total_tokens" ? (
-                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
-                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
-                </div>
-              </th>
-              <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide text-right w-24">Aksi</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100">
-            {paginatedCandidates.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="px-5 py-12 text-center">
-                  <div className="text-zinc-700 font-medium mb-1">Belum ada kandidat</div>
-                  <div className="text-sm text-zinc-500">
-                    Unggah CV (bisa banyak sekaligus) untuk melihat ranking otomatis.
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50/60 border-b border-zinc-200">
+              <tr className="text-left">
+                <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide w-10">#</th>
+                <th
+                  className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
+                  onClick={() => handleSort("candidate_name")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Kandidat</span>
+                    {sortConfig.key === "candidate_name" ? (
+                      sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                    ) : <ChevronsUpDown size={12} className="opacity-40" />}
                   </div>
-                </td>
+                </th>
+                <th
+                  className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none text-center"
+                  onClick={() => handleSort("total_score")}
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <span>Skor</span>
+                    {sortConfig.key === "total_score" ? (
+                      sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                    ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                  </div>
+                </th>
+                <th
+                  className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
+                  onClick={() => handleSort("must_have")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Must</span>
+                    {sortConfig.key === "must_have" ? (
+                      sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                    ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                  </div>
+                </th>
+                <th
+                  className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
+                  onClick={() => handleSort("experience")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Pengalaman</span>
+                    {sortConfig.key === "experience" ? (
+                      sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                    ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                  </div>
+                </th>
+                <th
+                  className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
+                  onClick={() => handleSort("recommendation")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Rekomendasi</span>
+                    {sortConfig.key === "recommendation" ? (
+                      sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                    ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                  </div>
+                </th>
+                <th
+                  className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
+                  onClick={() => handleSort("decision")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Keputusan</span>
+                    {sortConfig.key === "decision" ? (
+                      sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                    ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                  </div>
+                </th>
+                <th
+                  className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none text-center w-32"
+                  onClick={() => handleSort("total_tokens")}
+                  title="Total token yang digunakan & estimasi biaya pemrosesan AI dalam Rupiah (model Gemini 2.5 Flash, kurs $1 = Rp17.900)"
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <span>Token & Est. Rp</span>
+                    {sortConfig.key === "total_tokens" ? (
+                      sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                    ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                  </div>
+                </th>
+                <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide text-right w-24">Aksi</th>
               </tr>
-            ) : (
-              paginatedCandidates.map((c, idx) => {
-                const isProcessing =
-                  c.candidate_status === "pending" ||
-                  c.candidate_status === "processing" ||
-                  (c.candidate_status === "parsed" && !c.id);
-                const isFailed = c.candidate_status === "failed";
-                return (
-                  <tr
-                    key={c.candidate_id + (c.id || "")}
-                    className={`${isProcessing || isFailed ? "" : "hover:bg-zinc-50/80 cursor-pointer"}`}
-                    onClick={() => c.id && navigate(`/screenings/${c.id}`)}
-                    data-testid={`candidate-row-${c.candidate_id}`}
-                  >
-                    <td className="px-5 py-3 text-xs text-zinc-400 font-mono tabular-nums">{startIndex + idx + 1}</td>
-                    <td className="px-5 py-3">
-                      <div className="font-medium text-zinc-900">{c.candidate_name}</div>
-                      <div className="text-xs text-zinc-500 mt-0.5">
-                        {c.candidate_email || "—"}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-center">
-                      {isProcessing ? (
-                        <span className="text-xs text-amber-700 font-medium inline-flex items-center gap-1.5 justify-center w-full animate-pulse">
-                          <RotateCw size={10} className="animate-spin shrink-0" />
-                          {c.candidate_status === "pending" ? (
-                            "Menunggu..."
-                          ) : c.candidate_status === "processing" ? (
-                            "Mengekstrak..."
-                          ) : (
-                            "Menilai..."
-                          )}
-                        </span>
-                      ) : isFailed ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedFailedCandidate(c);
-                          }}
-                          className="text-[10px] text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-1.5 py-0.5 rounded-sm font-semibold inline-flex items-center gap-1 transition-colors"
-                          title="Klik untuk detail kegagalan"
-                        >
-                          <AlertCircle size={10} /> Gagal
-                        </button>
-                      ) : (
-                        <ScoreBadge score={c.total_score} />
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {c.must_have && <MiniBar score={c.must_have.score} />}
-                    </td>
-                    <td className="px-5 py-3">
-                      {c.experience && <MiniBar score={c.experience.score} />}
-                    </td>
-                    <td className="px-5 py-3">
-                      {!isProcessing && !isFailed && (
-                        <RecommendationBadge rec={c.recommendation} />
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {!isProcessing && !isFailed && (
-                        <DecisionBadge decision={c.decision} />
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-center text-xs text-zinc-600 font-mono">
-                      {!isProcessing && !isFailed && c.total_tokens ? (
-                        (() => {
-                          const USD_TO_IDR = 17900;
-                          const promptCost = (c.prompt_tokens || 0) * (0.30 / 1000000);
-                          const completionCost = (c.completion_tokens || 0) * (2.50 / 1000000);
-                          const totalCostRp = (promptCost + completionCost) * USD_TO_IDR;
-                          
-                          const formattedTokens = formatCompact(c.total_tokens);
-                          const formattedRp = `Rp ${formatCompact(totalCostRp)}`;
-                          
-                          return (
-                            <div className="flex flex-col items-center justify-center">
-                              <span 
-                                title={`In: ${(c.prompt_tokens || 0).toLocaleString("id-ID")} | Out: ${(c.completion_tokens || 0).toLocaleString("id-ID")}`}
-                                className="cursor-help border-b border-dotted border-zinc-400 font-medium text-zinc-800"
-                              >
-                                {formattedTokens}
-                              </span>
-                              <span className="text-[10px] text-zinc-500 mt-0.5">
-                                {formattedRp}
-                              </span>
-                            </div>
-                          );
-                        })()
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <div className="flex justify-end gap-2">
-                        {c.candidate_id && (
-                          <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRescreenCandidate(c.candidate_id);
-                              }}
-                              disabled={reprocessingIds.has(c.candidate_id)}
-                              className="text-xs px-2.5 py-1 rounded-sm border border-zinc-300 text-zinc-700 hover:bg-zinc-50 hover:border-zinc-400 transition-colors font-medium flex items-center justify-center"
-                              title="Proses Ulang"
-                            >
-                              <RotateCw size={14} className={reprocessingIds.has(c.candidate_id) ? "animate-spin" : ""} />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteCandidate(c.candidate_id);
-                              }}
-                              data-testid={`delete-candidate-${c.candidate_id}`}
-                              className="text-xs px-2.5 py-1 rounded-sm border border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 transition-colors font-medium flex items-center justify-center"
-                              title="Hapus Kandidat"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </>
-                        )}
-                        {c.id && (
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {paginatedCandidates.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-5 py-12 text-center">
+                    <div className="text-zinc-700 font-medium mb-1">Belum ada kandidat</div>
+                    <div className="text-sm text-zinc-500">
+                      Unggah CV (bisa banyak sekaligus) untuk melihat ranking otomatis.
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                paginatedCandidates.map((c, idx) => {
+                  const isProcessing =
+                    c.candidate_status === "pending" ||
+                    c.candidate_status === "processing" ||
+                    (c.candidate_status === "parsed" && !c.id);
+                  const isFailed = c.candidate_status === "failed";
+                  return (
+                    <tr
+                      key={c.candidate_id + (c.id || "")}
+                      className={`${isProcessing || isFailed ? "" : "hover:bg-zinc-50/80 cursor-pointer"}`}
+                      onClick={() => c.id && navigate(`/screenings/${c.id}`)}
+                      data-testid={`candidate-row-${c.candidate_id}`}
+                    >
+                      <td className="px-5 py-3 text-xs text-zinc-400 font-mono tabular-nums">{startIndex + idx + 1}</td>
+                      <td className="px-5 py-3">
+                        <div className="font-medium text-zinc-900">{c.candidate_name}</div>
+                        <div className="text-xs text-zinc-500 mt-0.5">
+                          {c.candidate_email || "—"}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-center">
+                        {isProcessing ? (
+                          <span className="text-xs text-amber-700 font-medium inline-flex items-center gap-1.5 justify-center w-full animate-pulse">
+                            <RotateCw size={10} className="animate-spin shrink-0" />
+                            {c.candidate_status === "pending" ? (
+                              "Menunggu..."
+                            ) : c.candidate_status === "processing" ? (
+                              "Mengekstrak..."
+                            ) : (
+                              "Menilai..."
+                            )}
+                          </span>
+                        ) : isFailed ? (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              navigate(`/screenings/${c.id}`);
+                              setSelectedFailedCandidate(c);
                             }}
-                            data-testid={`view-screening-${c.id}`}
-                            className="text-xs px-2.5 py-1 rounded-sm border border-zinc-300 text-zinc-700 hover:bg-zinc-900 hover:text-white hover:border-zinc-900 transition-colors font-medium"
+                            className="text-[10px] text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-1.5 py-0.5 rounded-sm font-semibold inline-flex items-center gap-1 transition-colors"
+                            title="Klik untuk detail kegagalan"
                           >
-                            Detail →
+                            <AlertCircle size={10} /> Gagal
                           </button>
+                        ) : (
+                          <ScoreBadge score={c.total_score} />
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-        
-        {/* Pagination Controls */}
-        {totalPages > 1 && (
-          <div className="px-5 py-3 border-t border-zinc-100 flex items-center justify-between gap-3 bg-zinc-50/30">
-            <span className="text-xs text-zinc-500">
-              Menampilkan {startIndex + 1} - {Math.min(startIndex + pageSize, sortedCandidates.length)} dari {sortedCandidates.length} data
-            </span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs px-2.5 rounded-sm"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                Sebelumnya
-              </Button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                      </td>
+                      <td className="px-5 py-3">
+                        {c.must_have && <MiniBar score={c.must_have.score} />}
+                      </td>
+                      <td className="px-5 py-3">
+                        {c.experience && <MiniBar score={c.experience.score} />}
+                      </td>
+                      <td className="px-5 py-3">
+                        {!isProcessing && !isFailed && (
+                          <RecommendationBadge rec={c.recommendation} />
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        {!isProcessing && !isFailed && (
+                          <DecisionBadge decision={c.decision} />
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-center text-xs text-zinc-600 font-mono">
+                        {!isProcessing && !isFailed && c.total_tokens ? (
+                          (() => {
+                            const USD_TO_IDR = 17900;
+                            const promptCost = (c.prompt_tokens || 0) * (0.30 / 1000000);
+                            const completionCost = (c.completion_tokens || 0) * (2.50 / 1000000);
+                            const totalCostRp = (promptCost + completionCost) * USD_TO_IDR;
+
+                            const formattedTokens = formatCompact(c.total_tokens);
+                            const formattedRp = `Rp ${formatCompact(totalCostRp)}`;
+
+                            return (
+                              <div className="flex flex-col items-center justify-center">
+                                <span
+                                  title={`In: ${(c.prompt_tokens || 0).toLocaleString("id-ID")} | Out: ${(c.completion_tokens || 0).toLocaleString("id-ID")}`}
+                                  className="cursor-help border-b border-dotted border-zinc-400 font-medium text-zinc-800"
+                                >
+                                  {formattedTokens}
+                                </span>
+                                <span className="text-[10px] text-zinc-500 mt-0.5">
+                                  {formattedRp}
+                                </span>
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          {c.candidate_id && (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRescreenCandidate(c.candidate_id);
+                                }}
+                                disabled={reprocessingIds.has(c.candidate_id)}
+                                className="text-xs px-2.5 py-1 rounded-sm border border-zinc-300 text-zinc-700 hover:bg-zinc-50 hover:border-zinc-400 transition-colors font-medium flex items-center justify-center"
+                                title="Proses Ulang"
+                              >
+                                <RotateCw size={14} className={reprocessingIds.has(c.candidate_id) ? "animate-spin" : ""} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteCandidate(c.candidate_id);
+                                }}
+                                data-testid={`delete-candidate-${c.candidate_id}`}
+                                className="text-xs px-2.5 py-1 rounded-sm border border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 transition-colors font-medium flex items-center justify-center"
+                                title="Hapus Kandidat"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          )}
+                          {c.id && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/screenings/${c.id}`);
+                              }}
+                              data-testid={`view-screening-${c.id}`}
+                              className="text-xs px-2.5 py-1 rounded-sm border border-zinc-300 text-zinc-700 hover:bg-zinc-900 hover:text-white hover:border-zinc-900 transition-colors font-medium"
+                            >
+                              Detail →
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="px-5 py-3 border-t border-zinc-100 flex items-center justify-between gap-3 bg-zinc-50/30">
+              <span className="text-xs text-zinc-500">
+                Menampilkan {startIndex + 1} - {Math.min(startIndex + pageSize, sortedCandidates.length)} dari {sortedCandidates.length} data
+              </span>
+              <div className="flex items-center gap-1">
                 <Button
-                  key={page}
-                  variant={currentPage === page ? "default" : "outline"}
+                  variant="outline"
                   size="sm"
-                  className={`h-7 text-xs w-7 p-0 rounded-sm ${
-                    currentPage === page ? "bg-zinc-900 text-white hover:bg-zinc-800" : ""
-                  }`}
-                  onClick={() => setCurrentPage(page)}
+                  className="h-7 text-xs px-2.5 rounded-sm"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
                 >
-                  {page}
+                  Sebelumnya
                 </Button>
-              ))}
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs px-2.5 rounded-sm"
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-              >
-                Berikutnya
-              </Button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                  <Button
+                    key={page}
+                    variant={currentPage === page ? "default" : "outline"}
+                    size="sm"
+                    className={`h-7 text-xs w-7 p-0 rounded-sm ${currentPage === page ? "bg-zinc-900 text-white hover:bg-zinc-800" : ""
+                      }`}
+                    onClick={() => setCurrentPage(page)}
+                  >
+                    {page}
+                  </Button>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2.5 rounded-sm"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Berikutnya
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
       )}
 
       {poolOpen && (
@@ -1038,7 +1056,7 @@ export default function JobDetail() {
                   <div className="text-xs text-zinc-500 font-mono mt-0.5">{selectedFailedCandidate.candidate_email}</div>
                 )}
               </div>
-              
+
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold mb-1">Penyebab Gagal</div>
                 <div className="bg-rose-50/50 border border-rose-100 text-rose-900 rounded-sm p-4 text-xs font-mono whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
@@ -1050,7 +1068,7 @@ export default function JobDetail() {
                 *Anda dapat mencoba memproses ulang kandidat ini menggunakan tombol 'Proses Ulang' (putar) pada baris aksi setelah memperbaiki masalah konfigurasi atau koneksi.
               </p>
             </div>
-            
+
             <div className="mt-6 flex justify-end gap-2">
               <Button
                 variant="outline"
@@ -1275,8 +1293,8 @@ function RecommendationBadge({ rec }) {
     rec === "shortlist"
       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
       : rec === "reject"
-      ? "bg-rose-50 text-rose-700 border-rose-200"
-      : "bg-amber-50 text-amber-700 border-amber-200";
+        ? "bg-rose-50 text-rose-700 border-rose-200"
+        : "bg-amber-50 text-amber-700 border-amber-200";
   return (
     <span className={`text-xs px-2 py-0.5 rounded-sm border font-medium ${cls}`}>
       {RECOMMENDATION_LABELS[rec] || rec}
@@ -1292,8 +1310,8 @@ function DecisionBadge({ decision }) {
     decision === "shortlisted"
       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
       : decision === "rejected"
-      ? "bg-rose-50 text-rose-700 border-rose-200"
-      : "bg-zinc-50 text-zinc-700 border-zinc-200";
+        ? "bg-rose-50 text-rose-700 border-rose-200"
+        : "bg-zinc-50 text-zinc-700 border-zinc-200";
   const labels = {
     shortlisted: "Shortlist",
     rejected: "Tolak",
