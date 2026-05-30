@@ -1,18 +1,20 @@
-"""Backend API tests for Sistem Penapisan CV Berbasis AI."""
 import io
 import os
 import time
-
 import pytest
 import requests
+from dotenv import load_dotenv
+from pathlib import Path
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://fullstack-app-184.preview.emergentagent.com").rstrip("/")
+load_dotenv(Path(__file__).parent.parent / ".env")
+
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
 API = f"{BASE_URL}/api"
 
 DEMO = {
     "hr": ("hr@demo.com", "demo123", "hr_recruiter"),
     "manager": ("manager@demo.com", "demo123", "hiring_manager"),
-    "admin": ("admin@demo.com", "demo123", "admin_it"),
+    "admin": ("hrdaplzoommeeting@gmail.com", "demo123", "admin_it"),
 }
 
 
@@ -91,7 +93,7 @@ def test_rbac_users_admin_ok(session, tokens):
     users = r.json()
     assert len(users) >= 3
     emails = {u["email"] for u in users}
-    assert {"hr@demo.com", "manager@demo.com", "admin@demo.com"}.issubset(emails)
+    assert {"hr@demo.com", "manager@demo.com", "hrdaplzoommeeting@gmail.com"}.issubset(emails)
 
 
 def test_rbac_providers_hr_denied(session, tokens):

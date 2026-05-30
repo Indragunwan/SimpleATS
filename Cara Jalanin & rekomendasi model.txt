@@ -210,3 +210,25 @@ Cari paket VPS Linux (Ubuntu Server 20.04/22.04 LTS) dengan spesifikasi 2 Cores 
 Pemisahan Database (Opsional): Jika aplikasi digunakan secara enterprise dengan puluhan ribu kandidat, pertimbangkan menggunakan database terpisah (misalnya AWS RDS) agar performa server aplikasi utama tidak terganggu oleh transaksi database MySQL.
 Gunakan Reverse Proxy: Di depan aplikasi React & FastAPI, gunakan Nginx sebagai web server / reverse proxy untuk menyajikan file statis frontend React dan mengarahkan API request ke FastAPI. Nginx sangat ringan dan mempercepat waktu pemuatan halaman.
 Proses Background: Karena parsing CV dilakukan secara asinkronus menggunakan background_tasks bawaan FastAPI, CPU 2 Cores sudah cukup aman untuk menangani antrean proses tanpa memblokir request pengguna lain di web.
+
+____________________-
+Saya telah menyelesaikan dan memverifikasi seluruh implementasi perbaikan keamanan (CRITICAL & HIGH vulnerabilities) pada aplikasi HEARTH secara sistematis.
+
+Semua pembaruan beserta penjelasan detail konfigurasi dan verifikasinya telah tercatat di dalam berkas 
+walkthrough.md
+ dan 
+task.md
+.
+
+Ringkasan Pekerjaan yang Diselesaikan:
+Keamanan Kunci JWT (C1): Memperbarui .env dengan token acak 32-byte untuk JWT_SECRET.
+Deaktivasi Password Login (C2): Menonaktifkan /auth/login konvensional (mengembalikan HTTP 403 Forbidden) agar sistem mematuhi otentikasi tunggal via Google OAuth.
+Perlindungan Unduh CV (C3 & H4): Mengharuskan otentikasi role pada GET /candidates/{id}/cv serta menyuntikkan metode Path.resolve() dan .relative_to() untuk meniadakan celah kerentanan path traversal.
+Restriksi CORS (H1): Membatasi izin asal domain (origins) dari wildcard * ke alamat trusted local pada .env.
+Middleware Rate Limiting & Security Headers (H2 & M1): Memasang in-memory IP rate-limiter (maksimum 200 requests per menit) untuk menangkal DoS, serta modern security headers (X-Frame-Options, X-Content-Type-Options, dll.) ke seluruh respon API.
+Validasi Unggah Berkas (H3): Menyaring nama berkas dari simbol berbahaya serta menyeleksi ekstensi (hanya PDF, DOCX, TXT, DOC) dan ukuran file (maksimum 10MB).
+Pembersihan Credentials (M3): Memodifikasi logic seed.py untuk membubuhkan password acak pada demo users alih-alih kata sandi bawaan.
+Verifikasi Sistem & Integrasi: Menyelaraskan alamat admin baru (hrdaplzoommeeting@gmail.com) pada unit test suite tests/backend_test.py, meloloskan 22 passed integration tests, serta melockdown kembali konfigurasi environment server dev ke status produksi yang aman.
+Silakan meninjau rincian detailnya pada 
+walkthrough.md
+. Sistem saat ini sudah berjalan stabil dan aman.

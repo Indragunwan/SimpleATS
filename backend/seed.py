@@ -33,6 +33,7 @@ DEMO_USERS = [
 
 async def seed_demo_users(session) -> None:
     import uuid
+    import secrets
 
     for user in DEMO_USERS:
         stmt = select(DBUser).where(DBUser.email == user["email"])
@@ -40,17 +41,19 @@ async def seed_demo_users(session) -> None:
         existing = res.scalar_one_or_none()
         if existing:
             continue
+        # Generate a random secure password so no hardcoded credential exists
+        random_pwd = secrets.token_urlsafe(32)
         db_user = DBUser(
             id=str(uuid.uuid4()),
             name=user["name"],
             email=user["email"],
-            password_hash=hash_password(user["password"]),
+            password_hash=hash_password(random_pwd),
             role=user["role"],
             is_active=True,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         session.add(db_user)
-        logger.info(f"Seeded demo user: {user['email']}")
+        logger.info(f"Seeded demo user: {user['email']} with secure random password")
     await session.commit()
 
 
