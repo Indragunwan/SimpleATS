@@ -4,13 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Check, Plus, Zap, Cpu, Brain, Save, Trash2, Edit, X } from "lucide-react";
+import { Check, Plus, Zap, Cpu, Brain, Save, Trash2, Edit, X, Sparkles } from "lucide-react";
 
 export default function AdminProvider() {
   const [providers, setProviders] = useState([]);
   const [assignments, setAssignments] = useState({
     parsing_provider_id: "",
     scoring_provider_id: "",
+    embeddings_provider_id: "",
   });
   const [testing, setTesting] = useState(false);
   const [savingAssign, setSavingAssign] = useState(false);
@@ -34,6 +35,7 @@ export default function AdminProvider() {
       setAssignments({
         parsing_provider_id: a.data.parsing_provider_id || "",
         scoring_provider_id: a.data.scoring_provider_id || "",
+        embeddings_provider_id: a.data.embeddings_provider_id || "",
       });
     } finally {
       setLoading(false);
@@ -62,6 +64,7 @@ export default function AdminProvider() {
       await api.put("/config/task-assignments", {
         parsing_provider_id: assignments.parsing_provider_id || null,
         scoring_provider_id: assignments.scoring_provider_id || null,
+        embeddings_provider_id: assignments.embeddings_provider_id || null,
       });
       toast.success("Penugasan model disimpan");
     } catch (err) {
@@ -136,7 +139,7 @@ export default function AdminProvider() {
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-5">
               <TaskAssignField
                 icon={Cpu}
                 title="Parsing"
@@ -144,7 +147,7 @@ export default function AdminProvider() {
                 hint="Rekomendasi: Gemini 3 Flash / 2.5 Flash · ~Rp 5-20/CV"
                 value={assignments.parsing_provider_id}
                 onChange={(v) => setAssignments({ ...assignments, parsing_provider_id: v })}
-                providers={providers}
+                providers={providers.filter(p => p.is_active)}
                 testId="assign-parsing"
               />
               <TaskAssignField
@@ -154,8 +157,18 @@ export default function AdminProvider() {
                 hint="Rekomendasi: Claude Sonnet 4.6 atau GPT-5.4 untuk kualitas · atau Flash untuk hemat"
                 value={assignments.scoring_provider_id}
                 onChange={(v) => setAssignments({ ...assignments, scoring_provider_id: v })}
-                providers={providers}
+                providers={providers.filter(p => p.is_active)}
                 testId="assign-scoring"
+              />
+              <TaskAssignField
+                icon={Sparkles}
+                title="Embeddings"
+                subtitle="Ekstraksi vektor representasi teks untuk pencarian AI"
+                hint="Rekomendasi: sumopod / OpenAI text-embedding-3-small"
+                value={assignments.embeddings_provider_id || ""}
+                onChange={(v) => setAssignments({ ...assignments, embeddings_provider_id: v })}
+                providers={providers.filter(p => p.is_active)}
+                testId="assign-embeddings"
               />
             </div>
           </div>
@@ -188,6 +201,11 @@ export default function AdminProvider() {
                     {assignments.scoring_provider_id === p.id && (
                       <span className="text-xs px-2 py-0.5 rounded-sm bg-violet-50 text-violet-700 border border-violet-200 font-medium">
                         SCORING
+                      </span>
+                    )}
+                    {assignments.embeddings_provider_id === p.id && (
+                      <span className="text-xs px-2 py-0.5 rounded-sm bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                        EMBEDDINGS
                       </span>
                     )}
                     <span className="text-xs px-2 py-0.5 rounded-sm border border-zinc-200 bg-zinc-50 text-zinc-700">
@@ -415,13 +433,22 @@ function AddProviderDialog({ onCreated }) {
               <Label className="text-xs uppercase">Provider</Label>
               <select
                 value={form.llm_provider}
-                onChange={(e) => setForm({ ...form, llm_provider: e.target.value })}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  let defaults = { llm_provider: val };
+                  if (val === "nvidia") {
+                    defaults.base_url = "https://integrate.api.nvidia.com/v1";
+                    defaults.model_name = "nvidia/nv-embedqa-e5-v5";
+                  }
+                  setForm({ ...form, ...defaults });
+                }}
                 className="w-full border border-zinc-300 rounded-sm text-sm h-10 px-3 mt-1"
                 data-testid="provider-llm-select"
               >
                 <option value="openai">OpenAI</option>
                 <option value="anthropic">Anthropic</option>
                 <option value="gemini">Gemini</option>
+                <option value="nvidia">Nvidia</option>
               </select>
             </div>
             <div>
@@ -583,13 +610,22 @@ function EditProviderDialog({ provider, onUpdated, open, setOpen }) {
               <Label className="text-xs uppercase">Provider</Label>
               <select
                 value={form.llm_provider}
-                onChange={(e) => setForm({ ...form, llm_provider: e.target.value })}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  let defaults = { llm_provider: val };
+                  if (val === "nvidia") {
+                    defaults.base_url = "https://integrate.api.nvidia.com/v1";
+                    defaults.model_name = "nvidia/nv-embedqa-e5-v5";
+                  }
+                  setForm({ ...form, ...defaults });
+                }}
                 className="w-full border border-zinc-300 rounded-sm text-sm h-10 px-3 mt-1"
                 data-testid="edit-provider-llm-select"
               >
                 <option value="openai">OpenAI</option>
                 <option value="anthropic">Anthropic</option>
                 <option value="gemini">Gemini</option>
+                <option value="nvidia">Nvidia</option>
               </select>
             </div>
             <div>

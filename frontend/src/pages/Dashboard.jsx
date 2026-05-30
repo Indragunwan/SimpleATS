@@ -1,7 +1,20 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api, { SCORE_BAND, BAND_COLORS } from "@/lib/api";
-import { Briefcase, Users, Sparkles, TrendingUp } from "lucide-react";
+import { Briefcase, Users, Sparkles, TrendingUp, Cpu, Coins } from "lucide-react";
+
+const formatCompact = (num) => {
+  if (num === null || num === undefined || isNaN(num)) return "0";
+  if (num >= 1000000) {
+    const val = num / 1000000;
+    return parseFloat(val.toFixed(1)) + "M";
+  }
+  if (num >= 1000) {
+    const val = num / 1000;
+    return parseFloat(val.toFixed(1)) + "K";
+  }
+  return Number(num) % 1 === 0 ? num.toString() : parseFloat(Number(num).toFixed(2)).toString();
+};
 
 function StatCard({ icon: Icon, label, value, testId }) {
   return (
@@ -14,8 +27,14 @@ function StatCard({ icon: Icon, label, value, testId }) {
           <div className="text-xs uppercase tracking-wider text-zinc-500 font-medium">
             {label}
           </div>
-          <div className="font-heading text-3xl font-semibold mt-2 tracking-tight tabular-nums">
-            {value}
+          <div className="mt-2 tracking-tight">
+            {typeof value === "object" ? (
+              value
+            ) : (
+              <div className="font-heading text-3xl font-semibold tabular-nums">
+                {value}
+              </div>
+            )}
           </div>
         </div>
         <div className="w-9 h-9 bg-zinc-100 flex items-center justify-center rounded-sm text-zinc-700">
@@ -54,7 +73,7 @@ export default function Dashboard() {
         </p>
       </header>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-10">
         <StatCard
           icon={Briefcase}
           label="Lowongan Aktif"
@@ -78,6 +97,21 @@ export default function Dashboard() {
           label="Total Screening"
           value={stats.total_screenings}
           testId="stat-total-screenings"
+        />
+        <StatCard
+          icon={Cpu}
+          label="Penggunaan AI & Token"
+          value={
+            <div className="flex flex-col">
+              <span className="font-heading text-3xl font-semibold tracking-tight text-zinc-900 tabular-nums">
+                Rp {formatCompact(stats.total_rupiah_cost)}
+              </span>
+              <span className="text-sm font-medium text-zinc-500 mt-1.5 font-mono">
+                {formatCompact(stats.total_tokens_used)}
+              </span>
+            </div>
+          }
+          testId="stat-total-tokens"
         />
       </div>
 
@@ -160,13 +194,12 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <span
-                    className={`text-xs px-2 py-1 rounded-sm border font-medium ${
-                      j.status === "active"
-                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                        : j.status === "draft"
+                    className={`text-xs px-2 py-1 rounded-sm border font-medium ${j.status === "active"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : j.status === "draft"
                         ? "bg-zinc-50 text-zinc-600 border-zinc-200"
                         : "bg-zinc-100 text-zinc-500 border-zinc-200"
-                    }`}
+                      }`}
                     data-testid={`job-status-${j.id}`}
                   >
                     {j.status}

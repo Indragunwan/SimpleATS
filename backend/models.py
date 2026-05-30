@@ -75,6 +75,9 @@ class JobPostingCreate(BaseModel):
     title: str
     department: Optional[str] = ""
     raw_jd_text: str
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    location: Optional[str] = None
 
 
 class JobPostingUpdate(BaseModel):
@@ -89,6 +92,9 @@ class JobPostingUpdate(BaseModel):
     education_level: Optional[str] = None
     education_major: Optional[str] = None
     responsibilities: Optional[list[str]] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    location: Optional[str] = None
 
 
 class CriterionInput(BaseModel):
@@ -143,9 +149,15 @@ class ParsedCV(BaseModel):
     work_history: list[WorkHistoryItem] = Field(default_factory=list)
     education: list[EducationItem] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
+    hard_skills: list[str] = Field(default_factory=list)
+    soft_skills: list[str] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
     languages: list[str] = Field(default_factory=list)
     years_of_experience: int = 0
+    gender: str = ""
+    birth_date: str = ""
+    address: str = ""
+    achievements: list[str] = Field(default_factory=list)
 
 
 class Candidate(BaseModel):
@@ -188,6 +200,9 @@ class ScreeningResult(BaseModel):
     decided_at: Optional[str] = None
     created_at: str = Field(default_factory=_now_iso)
     error_message: Optional[str] = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
 
 
 class DecisionUpdate(BaseModel):
@@ -265,6 +280,9 @@ class DBJobPosting(Base):
     created_at = Column(String(50), nullable=False)
     extraction_status = Column(String(50), default="processing")
     extraction_error = Column(Text)
+    start_date = Column(String(50), nullable=True)
+    end_date = Column(String(50), nullable=True)
+    location = Column(String(255), nullable=True)
 
 class DBCandidate(Base):
     __tablename__ = "candidates"
@@ -279,6 +297,7 @@ class DBCandidate(Base):
     error_message = Column(Text)
     created_at = Column(String(50), nullable=False)
     job_posting_id = Column(String(36), nullable=False)
+    cv_embedding = Column(JSON, nullable=True)
 
 class DBScreeningResult(Base):
     __tablename__ = "screening_results"
@@ -299,6 +318,9 @@ class DBScreeningResult(Base):
     decided_by = Column(String(36))
     decided_at = Column(String(50))
     created_at = Column(String(50), nullable=False)
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
 
 class DBAIProviderConfig(Base):
     __tablename__ = "ai_provider_configs"
@@ -319,4 +341,16 @@ class DBSystemSettings(Base):
     id = Column(String(50), primary_key=True)
     parsing_provider_id = Column(String(36))
     scoring_provider_id = Column(String(36))
+    embeddings_provider_id = Column(String(36))
+
+
+class DBAISearchLog(Base):
+    __tablename__ = "ai_search_logs"
+    id = Column(String(36), primary_key=True)
+    query = Column(Text, nullable=False)
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    created_at = Column(String(50), nullable=False)
+
 

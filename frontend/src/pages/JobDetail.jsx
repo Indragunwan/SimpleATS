@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import api, { BAND_COLORS, RECOMMENDATION_LABELS, SCORE_BAND } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, Upload, RotateCw, Briefcase, Search, Sparkles, Trash2, HelpCircle, Pencil, Save, X } from "lucide-react";
+import { ArrowLeft, Upload, RotateCw, Briefcase, Search, Sparkles, Trash2, HelpCircle, Pencil, Save, X, Settings2, Users, ChevronUp, ChevronDown, ChevronsUpDown, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import CriteriaEditor from "@/components/CriteriaEditor";
 import {
@@ -13,16 +14,81 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+const TABS = [
+  { id: "criteria", label: "Kriteria & Bobot", icon: Settings2 },
+  { id: "candidates", label: "Kandidat & Ranking", icon: Users },
+];
+
 export default function JobDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [job, setJob] = useState(null);
   const [candidates, setCandidates] = useState([]);
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState(location.state?.activeTab || "criteria");
+  const [sortConfig, setSortConfig] = useState({ key: "total_score", direction: "desc" });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [reprocessingIds, setReprocessingIds] = useState(new Set());
+  const [rescreenAllOpen, setRescreenAllOpen] = useState(false);
+  const [rescreeningAll, setRescreeningAll] = useState(false);
+  const [selectedFailedCandidate, setSelectedFailedCandidate] = useState(null);
+
+  const formatDuration = (seconds) => {
+    if (seconds < 60) return `${seconds} detik`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return secs > 0 ? `${mins} menit ${secs} detik` : `${mins} menit`;
+  };
+
+  const formatRupiah = (amount) => {
+    return new Intl.NumberFormat("id-ID").format(amount);
+  };
+
+  const formatCompact = (num) => {
+    if (num === null || num === undefined || isNaN(num)) return "0";
+    if (num >= 1000000) {
+      const val = num / 1000000;
+      return parseFloat(val.toFixed(1)) + "M";
+    }
+    if (num >= 1000) {
+      const val = num / 1000;
+      return parseFloat(val.toFixed(1)) + "K";
+    }
+    return Number(num) % 1 === 0 ? num.toString() : parseFloat(Number(num).toFixed(2)).toString();
+  };
+
+  const handleRescreenAll = async () => {
+    setRescreeningAll(true);
+    try {
+      await api.post(`/jobs/${id}/candidates/rescreen-all`);
+      toast.success("Pemrosesan ulang massal dimulai di latar belakang");
+      setRescreenAllOpen(false);
+      load();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal memproses ulang semua kandidat");
+    } finally {
+      setRescreeningAll(false);
+    }
+  };
+
+  const handleSort = (key) => {
+    let direction = "asc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+    setCurrentPage(1);
+  };
   const [search, setSearch] = useState("");
   const [minScore, setMinScore] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [poolOpen, setPoolOpen] = useState(false);
   const fileInputRef = useRef(null);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, minScore]);
   const pollRef = useRef(null);
 
   const [editingMeta, setEditingMeta] = useState(false);
@@ -158,12 +224,33 @@ export default function JobDetail() {
     }
   };
 
+  const handleRescreenCandidate = async (candidateId) => {
+    setReprocessingIds((prev) => {
+      const next = new Set(prev);
+      next.add(candidateId);
+      return next;
+    });
+    try {
+      await api.post(`/jobs/${id}/candidates/${candidateId}/rescreen`);
+      toast.success("Kandidat berhasil di-screen ulang");
+      load();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal melakukan screen ulang");
+    } finally {
+      setReprocessingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(candidateId);
+        return next;
+      });
+    }
+  };
+
   const handleDeleteCandidate = async (candidateId) => {
     if (!window.confirm("Yakin ingin menghapus kandidat ini?")) return;
     try {
       await api.delete(`/jobs/${id}/candidates/${candidateId}`);
       toast.success("Kandidat berhasil dihapus");
-      setLoad((l) => l + 1);
+      load();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Gagal menghapus kandidat");
     }
@@ -177,6 +264,46 @@ export default function JobDetail() {
       (search === "" ||
         (c.candidate_name || "").toLowerCase().includes(search.toLowerCase()))
   );
+
+  const sortedCandidates = [...filtered].sort((a, b) => {
+    let valA, valB;
+    if (sortConfig.key === "candidate_name") {
+      valA = a.candidate_name || "";
+      valB = b.candidate_name || "";
+    } else if (sortConfig.key === "total_score") {
+      valA = a.total_score || 0;
+      valB = b.total_score || 0;
+    } else if (sortConfig.key === "must_have") {
+      valA = a.must_have?.score || 0;
+      valB = b.must_have?.score || 0;
+    } else if (sortConfig.key === "experience") {
+      valA = a.experience?.score || 0;
+      valB = b.experience?.score || 0;
+    } else if (sortConfig.key === "recommendation") {
+      valA = a.recommendation || "";
+      valB = b.recommendation || "";
+    } else if (sortConfig.key === "decision") {
+      valA = a.decision || "";
+      valB = b.decision || "";
+    } else if (sortConfig.key === "total_tokens") {
+      valA = a.total_tokens || 0;
+      valB = b.total_tokens || 0;
+    }
+
+    if (typeof valA === "string") {
+      return sortConfig.direction === "asc"
+        ? valA.localeCompare(valB)
+        : valB.localeCompare(valA);
+    } else {
+      return sortConfig.direction === "asc"
+        ? (valA || 0) - (valB || 0)
+        : (valB || 0) - (valA || 0);
+    }
+  });
+
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedCandidates = sortedCandidates.slice(startIndex, startIndex + pageSize);
+  const totalPages = Math.ceil(sortedCandidates.length / pageSize);
 
   return (
     <div className="p-10" data-testid="job-detail-page">
@@ -210,7 +337,8 @@ export default function JobDetail() {
           >
             <Sparkles size={14} className="mr-1.5" /> Saran dari Pool
           </Button>
-          <Button
+          {user?.role !== "hr_recruiter" && (
+              <Button
             variant="outline"
             onClick={handleReextract}
             className="rounded-sm border-zinc-300"
@@ -218,7 +346,9 @@ export default function JobDetail() {
           >
             <RotateCw size={14} className="mr-1.5" /> Ekstrak Ulang
           </Button>
-          <Button
+            )}
+          {user?.role !== "hr_recruiter" && (
+              <Button
             variant="outline"
             onClick={handleDeleteJob}
             className="rounded-sm border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
@@ -226,31 +356,62 @@ export default function JobDetail() {
           >
             <Trash2 size={14} className="mr-1.5" /> Hapus Lowongan
           </Button>
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="rounded-sm bg-zinc-900 hover:bg-zinc-800"
-            data-testid="upload-cv-button"
-          >
-            <Upload size={14} className="mr-1.5" />
-            {uploading ? "Mengunggah..." : "Unggah CV"}
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".pdf,.docx,.doc,.txt"
-            className="hidden"
-            onChange={(e) => handleUpload(e.target.files)}
-            data-testid="upload-cv-input"
-          />
+            )}
+          {activeTab === "candidates" && (
+            <>
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="rounded-sm bg-zinc-900 hover:bg-zinc-800"
+                data-testid="upload-cv-button"
+              >
+                <Upload size={14} className="mr-1.5" />
+                {uploading ? "Mengunggah..." : "Unggah CV"}
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.docx,.doc,.txt"
+                className="hidden"
+                onChange={(e) => handleUpload(e.target.files)}
+                data-testid="upload-cv-input"
+              />
+            </>
+          )}
         </div>
       </header>
 
-      {/* Criteria & Education Editor */}
+      
+      {/* Tab Navigation */}
+      <div className="flex items-center gap-0 border-b border-zinc-200 mb-6">
+        {TABS.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`
+                relative flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all
+                ${isActive
+                  ? "text-zinc-900 border-b-2 border-zinc-900 -mb-px bg-transparent"
+                  : "text-zinc-500 hover:text-zinc-700 border-b-2 border-transparent -mb-px"
+                }
+              `}
+              data-testid={`tab-${tab.id}`}
+            >
+              <Icon size={15} className={isActive ? "text-zinc-900" : "text-zinc-400"} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === "criteria" ? (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
         <div className="lg:col-span-2">
-          <CriteriaEditor job={job} onUpdate={load} />
+          <CriteriaEditor job={job} onUpdate={load} editable={user?.role !== "hr_recruiter"} />
         </div>
 
         <div className="bg-white border border-zinc-200 rounded-sm p-5 h-fit" data-testid="job-meta">
@@ -259,15 +420,17 @@ export default function JobDetail() {
               Konfigurasi Lowongan
             </h3>
             {!editingMeta ? (
-              <Button
-                onClick={startEditingMeta}
-                variant="outline"
-                size="sm"
-                className="rounded-sm border-zinc-300 h-7 text-xs"
-                data-testid="edit-meta-button"
-              >
-                <Pencil size={12} className="mr-1" /> Edit
-              </Button>
+              user?.role !== "hr_recruiter" && (
+                <Button
+                  onClick={startEditingMeta}
+                  variant="outline"
+                  size="sm"
+                  className="rounded-sm border-zinc-300 h-7 text-xs"
+                  data-testid="edit-meta-button"
+                >
+                  <Pencil size={12} className="mr-1" /> Edit
+                </Button>
+              )
             ) : (
               <div className="flex gap-1.5">
                 <Button
@@ -453,7 +616,8 @@ export default function JobDetail() {
         </div>
       </div>
 
-      {/* Candidates */}
+      
+      ) : (
       <div className="bg-white border border-zinc-200 rounded-sm" data-testid="candidates-section">
         <div className="px-5 py-4 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -461,10 +625,20 @@ export default function JobDetail() {
               Ranking Kandidat
             </h2>
             <p className="text-xs text-zinc-500 mt-0.5">
-              {candidates.length} total · {filtered.length} ditampilkan
+              {candidates.length} total · {filtered.length} ditemukan
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {candidates.length > 0 && user?.role !== "hr_recruiter" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRescreenAllOpen(true)}
+                className="rounded-sm border-zinc-300 text-zinc-700 hover:bg-zinc-50 h-8 text-xs font-semibold mr-1.5"
+              >
+                <RotateCw size={12} className="mr-1.5" /> Proses Ulang Semua
+              </Button>
+            )}
             <div className="relative">
               <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
               <Input
@@ -486,6 +660,22 @@ export default function JobDetail() {
               <option value={60}>Min 60</option>
               <option value={75}>Min 75 (Shortlist)</option>
             </select>
+            <div className="flex items-center gap-1.5 ml-2">
+              <span className="text-xs text-zinc-500">Tampilkan:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="border border-zinc-300 rounded-sm text-xs h-8 px-2"
+              >
+                <option value={10}>10 data</option>
+                <option value={15}>15 data</option>
+                <option value={30}>30 data</option>
+                <option value={50}>50 data</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -493,19 +683,91 @@ export default function JobDetail() {
           <thead className="bg-zinc-50/60 border-b border-zinc-200">
             <tr className="text-left">
               <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide w-10">#</th>
-              <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide">Kandidat</th>
-              <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide text-center">Skor</th>
-              <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide">Must</th>
-              <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide">Pengalaman</th>
-              <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide">Rekomendasi</th>
-              <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide">Keputusan</th>
-              <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide text-right">Aksi</th>
+              <th 
+                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
+                onClick={() => handleSort("candidate_name")}
+              >
+                <div className="flex items-center gap-1">
+                  <span>Kandidat</span>
+                  {sortConfig.key === "candidate_name" ? (
+                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                </div>
+              </th>
+              <th 
+                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none text-center"
+                onClick={() => handleSort("total_score")}
+              >
+                <div className="flex items-center justify-center gap-1">
+                  <span>Skor</span>
+                  {sortConfig.key === "total_score" ? (
+                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                </div>
+              </th>
+              <th 
+                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
+                onClick={() => handleSort("must_have")}
+              >
+                <div className="flex items-center gap-1">
+                  <span>Must</span>
+                  {sortConfig.key === "must_have" ? (
+                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                </div>
+              </th>
+              <th 
+                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
+                onClick={() => handleSort("experience")}
+              >
+                <div className="flex items-center gap-1">
+                  <span>Pengalaman</span>
+                  {sortConfig.key === "experience" ? (
+                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                </div>
+              </th>
+              <th 
+                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
+                onClick={() => handleSort("recommendation")}
+              >
+                <div className="flex items-center gap-1">
+                  <span>Rekomendasi</span>
+                  {sortConfig.key === "recommendation" ? (
+                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                </div>
+              </th>
+              <th 
+                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none"
+                onClick={() => handleSort("decision")}
+              >
+                <div className="flex items-center gap-1">
+                  <span>Keputusan</span>
+                  {sortConfig.key === "decision" ? (
+                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                </div>
+              </th>
+              <th 
+                className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide cursor-pointer hover:bg-zinc-100/80 transition-colors select-none text-center w-32"
+                onClick={() => handleSort("total_tokens")}
+                title="Total token yang digunakan & estimasi biaya pemrosesan AI dalam Rupiah (model Gemini 2.5 Flash, kurs $1 = Rp17.900)"
+              >
+                <div className="flex items-center justify-center gap-1">
+                  <span>Token & Est. Rp</span>
+                  {sortConfig.key === "total_tokens" ? (
+                    sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                  ) : <ChevronsUpDown size={12} className="opacity-40" />}
+                </div>
+              </th>
+              <th className="px-5 py-2.5 text-xs font-medium text-zinc-500 uppercase tracking-wide text-right w-24">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
-            {filtered.length === 0 ? (
+            {paginatedCandidates.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-5 py-12 text-center">
+                <td colSpan={9} className="px-5 py-12 text-center">
                   <div className="text-zinc-700 font-medium mb-1">Belum ada kandidat</div>
                   <div className="text-sm text-zinc-500">
                     Unggah CV (bisa banyak sekaligus) untuk melihat ranking otomatis.
@@ -513,7 +775,7 @@ export default function JobDetail() {
                 </td>
               </tr>
             ) : (
-              filtered.map((c, idx) => {
+              paginatedCandidates.map((c, idx) => {
                 const isProcessing =
                   c.candidate_status === "pending" ||
                   c.candidate_status === "processing" ||
@@ -526,7 +788,7 @@ export default function JobDetail() {
                     onClick={() => c.id && navigate(`/screenings/${c.id}`)}
                     data-testid={`candidate-row-${c.candidate_id}`}
                   >
-                    <td className="px-5 py-3 text-xs text-zinc-400 font-mono tabular-nums">{idx + 1}</td>
+                    <td className="px-5 py-3 text-xs text-zinc-400 font-mono tabular-nums">{startIndex + idx + 1}</td>
                     <td className="px-5 py-3">
                       <div className="font-medium text-zinc-900">{c.candidate_name}</div>
                       <div className="text-xs text-zinc-500 mt-0.5">
@@ -546,7 +808,16 @@ export default function JobDetail() {
                           )}
                         </span>
                       ) : isFailed ? (
-                        <span className="text-xs text-rose-700 font-medium">Gagal</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedFailedCandidate(c);
+                          }}
+                          className="text-[10px] text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-1.5 py-0.5 rounded-sm font-semibold inline-flex items-center gap-1 transition-colors"
+                          title="Klik untuk detail kegagalan"
+                        >
+                          <AlertCircle size={10} /> Gagal
+                        </button>
                       ) : (
                         <ScoreBadge score={c.total_score} />
                       )}
@@ -567,20 +838,62 @@ export default function JobDetail() {
                         <DecisionBadge decision={c.decision} />
                       )}
                     </td>
+                    <td className="px-5 py-3 text-center text-xs text-zinc-600 font-mono">
+                      {!isProcessing && !isFailed && c.total_tokens ? (
+                        (() => {
+                          const USD_TO_IDR = 17900;
+                          const promptCost = (c.prompt_tokens || 0) * (0.30 / 1000000);
+                          const completionCost = (c.completion_tokens || 0) * (2.50 / 1000000);
+                          const totalCostRp = (promptCost + completionCost) * USD_TO_IDR;
+                          
+                          const formattedTokens = formatCompact(c.total_tokens);
+                          const formattedRp = `Rp ${formatCompact(totalCostRp)}`;
+                          
+                          return (
+                            <div className="flex flex-col items-center justify-center">
+                              <span 
+                                title={`In: ${(c.prompt_tokens || 0).toLocaleString("id-ID")} | Out: ${(c.completion_tokens || 0).toLocaleString("id-ID")}`}
+                                className="cursor-help border-b border-dotted border-zinc-400 font-medium text-zinc-800"
+                              >
+                                {formattedTokens}
+                              </span>
+                              <span className="text-[10px] text-zinc-500 mt-0.5">
+                                {formattedRp}
+                              </span>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex justify-end gap-2">
                         {c.candidate_id && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteCandidate(c.candidate_id);
-                            }}
-                            data-testid={`delete-candidate-${c.candidate_id}`}
-                            className="text-xs px-2.5 py-1 rounded-sm border border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 transition-colors font-medium flex items-center justify-center"
-                            title="Hapus Kandidat"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRescreenCandidate(c.candidate_id);
+                              }}
+                              disabled={reprocessingIds.has(c.candidate_id)}
+                              className="text-xs px-2.5 py-1 rounded-sm border border-zinc-300 text-zinc-700 hover:bg-zinc-50 hover:border-zinc-400 transition-colors font-medium flex items-center justify-center"
+                              title="Proses Ulang"
+                            >
+                              <RotateCw size={14} className={reprocessingIds.has(c.candidate_id) ? "animate-spin" : ""} />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteCandidate(c.candidate_id);
+                              }}
+                              data-testid={`delete-candidate-${c.candidate_id}`}
+                              className="text-xs px-2.5 py-1 rounded-sm border border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 transition-colors font-medium flex items-center justify-center"
+                              title="Hapus Kandidat"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
                         )}
                         {c.id && (
                           <button
@@ -602,7 +915,50 @@ export default function JobDetail() {
             )}
           </tbody>
         </table>
+        
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="px-5 py-3 border-t border-zinc-100 flex items-center justify-between gap-3 bg-zinc-50/30">
+            <span className="text-xs text-zinc-500">
+              Menampilkan {startIndex + 1} - {Math.min(startIndex + pageSize, sortedCandidates.length)} dari {sortedCandidates.length} data
+            </span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-2.5 rounded-sm"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                Sebelumnya
+              </Button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                <Button
+                  key={page}
+                  variant={currentPage === page ? "default" : "outline"}
+                  size="sm"
+                  className={`h-7 text-xs w-7 p-0 rounded-sm ${
+                    currentPage === page ? "bg-zinc-900 text-white hover:bg-zinc-800" : ""
+                  }`}
+                  onClick={() => setCurrentPage(page)}
+                >
+                  {page}
+                </Button>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-2.5 rounded-sm"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Berikutnya
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
+      )}
 
       {poolOpen && (
         <SuggestFromPoolDialog
@@ -613,6 +969,113 @@ export default function JobDetail() {
             setTimeout(load, 1500);
           }}
         />
+      )}
+
+      {rescreenAllOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white border border-zinc-200 rounded-sm w-full max-w-md p-6">
+            <h3 className="font-heading text-lg font-semibold tracking-tight mb-4 flex items-center gap-2">
+              <RotateCw size={18} className="text-indigo-600 animate-pulse" /> Proses Ulang Semua CV
+            </h3>
+            <div className="space-y-3 text-sm text-zinc-600">
+              <p>
+                Anda akan memproses ulang <strong>{candidates.length} CV kandidat</strong> pada lowongan ini menggunakan konfigurasi bobot kriteria terbaru.
+              </p>
+              <div className="bg-zinc-50 border border-zinc-200 rounded-sm p-4 space-y-2 font-medium text-zinc-800">
+                <div className="flex justify-between">
+                  <span>Estimasi Waktu:</span>
+                  <span className="text-indigo-700">~{formatDuration(candidates.length * 8)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Estimasi Biaya Token:</span>
+                  <span className="text-indigo-700">Rp {formatRupiah(candidates.length * 50)}</span>
+                </div>
+              </div>
+              <p className="text-xs text-zinc-400 italic">
+                *Proses ini berjalan satu per satu di latar belakang secara otomatis. Halaman akan memperbarui status kandidat secara real-time.
+              </p>
+            </div>
+            <div className="mt-6 flex justify-end gap-2.5">
+              <Button
+                variant="outline"
+                className="rounded-sm border-zinc-300"
+                onClick={() => setRescreenAllOpen(false)}
+                disabled={rescreeningAll}
+              >
+                Batal
+              </Button>
+              <Button
+                onClick={handleRescreenAll}
+                disabled={rescreeningAll}
+                className="rounded-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
+              >
+                {rescreeningAll ? "Memulai..." : "Ya, Proses Ulang Semua"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedFailedCandidate && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-zinc-200 rounded-sm w-full max-w-md p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <h3 className="font-heading text-lg font-semibold text-rose-950 tracking-tight flex items-center gap-2">
+                <AlertCircle size={20} className="text-rose-600" /> Detail Kegagalan Screening
+              </h3>
+              <button
+                onClick={() => setSelectedFailedCandidate(null)}
+                className="text-zinc-400 hover:text-zinc-600 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold mb-1">Nama Kandidat</div>
+                <div className="text-sm font-semibold text-zinc-800">{selectedFailedCandidate.candidate_name}</div>
+                {selectedFailedCandidate.candidate_email && (
+                  <div className="text-xs text-zinc-500 font-mono mt-0.5">{selectedFailedCandidate.candidate_email}</div>
+                )}
+              </div>
+              
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold mb-1">Penyebab Gagal</div>
+                <div className="bg-rose-50/50 border border-rose-100 text-rose-900 rounded-sm p-4 text-xs font-mono whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
+                  {selectedFailedCandidate.candidate_error || "Terjadi kesalahan internal yang tidak diketahui selama memproses CV."}
+                </div>
+              </div>
+
+              <p className="text-xs text-zinc-400 italic">
+                *Anda dapat mencoba memproses ulang kandidat ini menggunakan tombol 'Proses Ulang' (putar) pada baris aksi setelah memperbaiki masalah konfigurasi atau koneksi.
+              </p>
+            </div>
+            
+            <div className="mt-6 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                className="rounded-sm border-zinc-300 text-xs h-9"
+                onClick={() => setSelectedFailedCandidate(null)}
+              >
+                Tutup
+              </Button>
+              {user?.role !== "hr_recruiter" && (
+                <Button
+                  onClick={async () => {
+                    const cid = selectedFailedCandidate.candidate_id;
+                    setSelectedFailedCandidate(null);
+                    if (cid) {
+                      await handleRescreenCandidate(cid);
+                    }
+                  }}
+                  className="rounded-sm bg-zinc-900 hover:bg-zinc-800 text-white font-medium text-xs h-9 flex items-center gap-1.5"
+                >
+                  <RotateCw size={12} /> Coba Lagi
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

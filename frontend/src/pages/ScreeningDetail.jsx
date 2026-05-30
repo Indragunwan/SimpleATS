@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import api, { BAND_COLORS, RECOMMENDATION_LABELS, SCORE_BAND } from "@/lib/api";
+import api, { API, BAND_COLORS, RECOMMENDATION_LABELS, SCORE_BAND } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, Check, X, Pause, Mail, Phone } from "lucide-react";
+import { ArrowLeft, Check, X, Pause, Mail, Phone, FileText, Trash2, RotateCw } from "lucide-react";
 import {
   Radar,
   RadarChart,
@@ -25,6 +25,7 @@ export default function ScreeningDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
+  const [rescreening, setRescreening] = useState(false);
 
   const load = async () => {
     const { data } = await api.get(`/screenings/${id}`);
@@ -48,8 +49,69 @@ export default function ScreeningDetail() {
   if (!data) return <div className="p-10 text-zinc-500" data-testid="screening-loading">Memuat...</div>;
 
   const { screening: s, candidate: c, job } = data;
+
+  const handleRescreen = async () => {
+    setRescreening(true);
+    try {
+      await api.post(`/jobs/${job.id}/candidates/${c.id}/rescreen`);
+      toast.success("Kandidat berhasil di-screen ulang");
+      load();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal melakukan screen ulang");
+    } finally {
+      setRescreening(false);
+    }
+  };
   const band = SCORE_BAND(s.total_score);
   const parsed = c?.parsed || {};
+
+  const handleDelete = async () => {
+    if (!window.confirm("Yakin ingin menghapus screening dan data kandidat ini? Tindakan ini tidak dapat dibatalkan.")) return;
+    try {
+      await api.delete(`/jobs/${job.id}/candidates/${c.id}`);
+      toast.success("Screening kandidat berhasil dihapus");
+      navigate(`/jobs/${job.id}`, { state: { activeTab: "candidates" } });
+    } catch (err) {
+      toast.error("Gagal menghapus screening");
+    }
+  };
+
+  function calculateAge(birthDateStr) {
+    if (!birthDateStr) return null;
+    const birthDate = new Date(birthDateStr);
+    if (isNaN(birthDate.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  }
+
+  const softKeywords = [
+    "hr", "recruitment", "human resources", "communication", "leadership", "budgeting", 
+    "management", "teamwork", "negotiation", "problem solving", "time management", 
+    "critical thinking", "adaptability", "conflict resolution", "interpersonal", 
+    "public speaking", "asset", "administration", "pengelolaan", "komunikasi", "kepemimpinan",
+    "public relation", "presentasi", "adaptif", "analitis", "kreatif", "negosiasi"
+  ];
+  
+  let hardSkills = parsed.hard_skills || [];
+  let softSkills = parsed.soft_skills || [];
+  
+  if (hardSkills.length === 0 && softSkills.length === 0 && parsed.skills) {
+    hardSkills = [];
+    softSkills = [];
+    parsed.skills.forEach(skill => {
+      const lower = skill.toLowerCase();
+      if (softKeywords.some(kw => lower.includes(kw))) {
+        softSkills.push(skill);
+      } else {
+        hardSkills.push(skill);
+      }
+    });
+  }
 
   const radarData = [
     { dim: "Must", value: s.must_have.score, fullMark: 100 },
@@ -62,7 +124,7 @@ export default function ScreeningDetail() {
   return (
     <div className="p-10" data-testid="screening-detail-page">
       <button
-        onClick={() => navigate(`/jobs/${job.id}`)}
+        onClick={() => navigate(`/jobs/${job.id}`, { state: { activeTab: "candidates" } })}
         className="text-xs text-zinc-500 hover:text-zinc-900 inline-flex items-center gap-1 mb-4"
         data-testid="back-to-job"
       >
@@ -87,6 +149,16 @@ export default function ScreeningDetail() {
                 <span className="inline-flex items-center gap-1"><Phone size={12} />{c.phone}</span>
               )}
               <span className="text-xs">· {parsed.years_of_experience || 0} thn pengalaman</span>
+              {c?.id && (
+                <a
+                  href={`${API}/candidates/${c.id}/cv`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded border border-indigo-200 transition-colors ml-2"
+                >
+                  <FileText size={12} /> Lihat CV Asli
+                </a>
+              )}
             </div>
           </div>
         </div>
@@ -94,9 +166,8 @@ export default function ScreeningDetail() {
           <div className="text-right">
             <div className="text-xs uppercase tracking-wider text-zinc-500">Skor Total</div>
             <div
-              className={`font-heading text-5xl font-semibold tabular-nums mt-1 ${
-                band === "high" ? "text-emerald-700" : band === "mid" ? "text-amber-700" : "text-rose-700"
-              }`}
+              className={`font-heading text-5xl font-semibold tabular-nums mt-1 ${band === "high" ? "text-emerald-700" : band === "mid" ? "text-amber-700" : "text-rose-700"
+                }`}
               data-testid="total-score"
             >
               {s.total_score}
@@ -143,6 +214,26 @@ export default function ScreeningDetail() {
           >
             <X size={14} className="mr-1" /> Tolak
           </Button>
+          <Button
+            onClick={handleRescreen}
+            disabled={rescreening}
+            variant="outline"
+            className="rounded-sm border-zinc-300 text-zinc-700 hover:bg-zinc-50 hover:border-zinc-400 ml-2 font-semibold"
+            size="sm"
+            data-testid="rescreen-candidate"
+          >
+            <RotateCw size={14} className={`mr-1 ${rescreening ? "animate-spin" : ""}`} />
+            {rescreening ? "Memproses..." : "Proses Ulang"}
+          </Button>
+          <Button
+            onClick={handleDelete}
+            variant="outline"
+            className="rounded-sm border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 ml-2 font-semibold"
+            size="sm"
+            data-testid="delete-screening"
+          >
+            <Trash2 size={14} className="mr-1" /> Hapus Screening
+          </Button>
         </div>
       </div>
 
@@ -177,9 +268,8 @@ export default function ScreeningDetail() {
                 <div key={k} data-testid={`dim-${k}`}>
                   <div className="flex justify-between items-baseline mb-1">
                     <span className="text-xs">{label}</span>
-                    <span className={`text-xs font-mono font-semibold tabular-nums ${
-                      dband === "high" ? "text-emerald-700" : dband === "mid" ? "text-amber-700" : "text-rose-700"
-                    }`}>
+                    <span className={`text-xs font-mono font-semibold tabular-nums ${dband === "high" ? "text-emerald-700" : dband === "mid" ? "text-amber-700" : "text-rose-700"
+                      }`}>
                       {dim.score}
                     </span>
                   </div>
@@ -189,8 +279,8 @@ export default function ScreeningDetail() {
                         dband === "high"
                           ? "h-full bg-emerald-500"
                           : dband === "mid"
-                          ? "h-full bg-amber-500"
-                          : "h-full bg-rose-500"
+                            ? "h-full bg-amber-500"
+                            : "h-full bg-rose-500"
                       }
                       style={{ width: `${dim.score}%` }}
                     />
@@ -207,21 +297,65 @@ export default function ScreeningDetail() {
             Profil Kandidat
           </h3>
 
+          {/* Grid Informasi Kandidat Baru */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 bg-zinc-50 p-4 rounded border border-zinc-150 text-sm">
+            <div>
+              <span className="text-zinc-500 block text-xs uppercase tracking-wider font-medium">Total Pengalaman Kerja</span>
+              <span className="font-semibold text-zinc-800">{parsed.years_of_experience || 0} tahun</span>
+            </div>
+            <div>
+              <span className="text-zinc-500 block text-xs uppercase tracking-wider font-medium">Gender</span>
+              <span className="font-semibold text-zinc-800 capitalize">{parsed.gender || "Tidak diketahui"}</span>
+            </div>
+            <div>
+              <span className="text-zinc-500 block text-xs uppercase tracking-wider font-medium">Usia</span>
+              <span className="font-semibold text-zinc-800">
+                {parsed.birth_date ? `${calculateAge(parsed.birth_date)} tahun (${parsed.birth_date})` : "Tidak diketahui"}
+              </span>
+            </div>
+            <div>
+              <span className="text-zinc-500 block text-xs uppercase tracking-wider font-medium">Alamat</span>
+              <span className="font-semibold text-zinc-800">{parsed.address || "Tidak diketahui"}</span>
+            </div>
+          </div>
+
           {parsed.summary && (
             <p className="text-sm text-zinc-700 mb-6 leading-relaxed">{parsed.summary}</p>
           )}
 
-          {parsed.skills?.length > 0 && (
-            <Section title="Keahlian">
-              <div className="flex flex-wrap gap-1.5">
-                {parsed.skills.map((sk, i) => (
-                  <span key={i} className="text-xs px-2 py-0.5 bg-zinc-100 text-zinc-700 rounded-sm">
-                    {sk}
-                  </span>
-                ))}
+          {/* Keahlian (Hard Skill & Soft Skill) */}
+          <Section title="Keahlian">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+              <div className="bg-zinc-50/50 p-3 rounded border border-zinc-100">
+                <div className="text-xs font-semibold text-zinc-600 mb-2 border-b pb-1">⚡ Hard Skill</div>
+                {hardSkills && hardSkills.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {hardSkills.map((sk, i) => (
+                      <span key={i} className="text-xs px-2 py-0.5 bg-white text-zinc-700 rounded border border-zinc-200">
+                        {sk}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-xs text-zinc-400 font-normal italic">—</span>
+                )}
               </div>
-            </Section>
-          )}
+              <div className="bg-zinc-50/50 p-3 rounded border border-zinc-100">
+                <div className="text-xs font-semibold text-zinc-600 mb-2 border-b pb-1">🤝 Soft Skill</div>
+                {softSkills && softSkills.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {softSkills.map((sk, i) => (
+                      <span key={i} className="text-xs px-2 py-0.5 bg-white text-zinc-700 rounded border border-zinc-200">
+                        {sk}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-xs text-zinc-400 font-normal italic">—</span>
+                )}
+              </div>
+            </div>
+          </Section>
 
           {parsed.work_history?.length > 0 && (
             <Section title="Riwayat Pekerjaan">
@@ -261,10 +395,20 @@ export default function ScreeningDetail() {
           )}
 
           {parsed.certifications?.length > 0 && (
-            <Section title="Sertifikasi">
-              <ul className="text-sm text-zinc-700 list-disc pl-4 space-y-0.5">
-                {parsed.certifications.map((c, i) => (
-                  <li key={i}>{c}</li>
+            <Section title="Training atau Sertifikasi">
+              <ul className="text-sm text-zinc-700 list-disc pl-4 space-y-1">
+                {parsed.certifications.map((cert, i) => (
+                  <li key={i}>{cert}</li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          {parsed.achievements?.length > 0 && (
+            <Section title="Achievement">
+              <ul className="text-sm text-zinc-700 list-disc pl-4 space-y-1">
+                {parsed.achievements.map((ach, i) => (
+                  <li key={i} className="text-zinc-800 font-medium">{ach}</li>
                 ))}
               </ul>
             </Section>
@@ -278,7 +422,7 @@ export default function ScreeningDetail() {
             data-testid="rationale-panel"
           >
             <div className="text-xs uppercase tracking-wider text-zinc-500 mb-3 font-medium">
-              Rationale AI
+              Kesimpulan
             </div>
             <p className="text-sm text-zinc-800 leading-relaxed" data-testid="rationale-summary">
               {s.rationale_summary || "—"}

@@ -27,6 +27,7 @@ from models import (
     DBScreeningResult,
     DBAIProviderConfig,
     DBSystemSettings,
+    DBAISearchLog,
 )
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
@@ -42,6 +43,7 @@ from ai_service import (  # noqa: E402
     extract_jd_criteria,
     parse_cv,
     recommendation_from_score,
+    generate_embedding,
 )
 from auth import (  # noqa: E402
     create_access_token,
@@ -83,6 +85,7 @@ async def lifespan(app: FastAPI):
     # Startup: Auto create tables if they do not exist
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS embeddings_provider_id VARCHAR(36);"))
         
     async with async_session() as session:
         await seed_demo_users(session)
@@ -136,6 +139,13 @@ def _ensure_list(val) -> list:
 def _job_to_dict(job: DBJobPosting) -> dict:
     if not job:
         return {}
+    
+    status = job.status
+    if job.end_date and status == "active":
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        if today_str > job.end_date:
+            status = "closed"
+
     return {
         "id": job.id,
         "title": job.title,
@@ -150,12 +160,29 @@ def _job_to_dict(job: DBJobPosting) -> dict:
         "responsibilities": _ensure_list(job.responsibilities),
         "criteria": _ensure_list(job.criteria),
         "weights": _ensure_dict(job.weights),
-        "status": job.status,
+        "status": status,
         "created_by": job.created_by,
         "created_at": job.created_at,
         "extraction_status": job.extraction_status,
         "extraction_error": job.extraction_error,
+        "start_date": job.start_date,
+        "end_date": job.end_date,
+        "location": job.location,
     }
+
+
+def _is_job_closed(job: DBJobPosting) -> bool:
+    if not job:
+        return False
+    if job.status == "closed":
+        return True
+    if job.end_date and job.status == "active":
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        if today_str > job.end_date:
+            return True
+    return False
+
+
 
 
 async def _get_active_ai_config(session: AsyncSession) -> dict:
@@ -376,13 +403,34 @@ async def update_user(
     )
 
 
+@api.delete("/users/{user_id}")
+async def delete_user(
+    user_id: str,
+    user: dict = Depends(require_roles("admin_it")),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    if user_id == user["id"]:
+        raise HTTPException(400, "Anda tidak dapat menghapus akun Anda sendiri")
+    stmt = select(DBUser).where(DBUser.id == user_id)
+    res = await session.execute(stmt)
+    db_user = res.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User tidak ditemukan")
+    await session.delete(db_user)
+    await session.commit()
+    return {"message": "User berhasil dihapus"}
+
 # ============ JOB POSTINGS ============
 @api.post("/jobs")
 async def create_job(
     title: str = Form(...),
     raw_jd_text: str = Form(""),
     raw_spec_text: str = Form(""),
-    user: dict = Depends(require_roles("hr_recruiter", "hiring_manager", "admin_it")),
+    target_position: str = Form(""),
+    start_date: Optional[str] = Form(None),
+    end_date: Optional[str] = Form(None),
+    location: Optional[str] = Form(None),
+    user: dict = Depends(require_roles("hiring_manager", "admin_it")),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     import uuid
@@ -416,7 +464,7 @@ async def create_job(
         department="",
         raw_jd_text=text,
         file_name=None,
-        target_position="",
+        target_position=target_position.strip(),
         min_experience_years=0,
         education_requirement="",
         education_level="",
@@ -429,6 +477,9 @@ async def create_job(
         created_at=datetime.now(timezone.utc).isoformat(),
         extraction_status="processing",
         extraction_error=None,
+        start_date=start_date,
+        end_date=end_date,
+        location=location,
     )
     session.add(db_job)
     await session.commit()
@@ -445,7 +496,10 @@ async def create_job(
         for v in extracted.get("nice_to_have", []):
             criteria.append({"id": str(_u.uuid4()), "type": "nice", "category": "skill", "value": v, "weight": 3})
         
-        db_job.target_position = extracted.get("target_position", "")
+        # AI extraction: only override target_position if user didn't provide one
+        extracted_position = extracted.get("target_position", "")
+        if not db_job.target_position and extracted_position:
+            db_job.target_position = extracted_position
         db_job.min_experience_years = extracted.get("min_experience_years", 0)
         db_job.education_requirement = extracted.get("education_requirement", "")
         db_job.education_level = extracted.get("education_level", "")
@@ -504,7 +558,7 @@ async def get_job(
 async def update_job(
     job_id: str,
     payload: JobPostingUpdate,
-    user: dict = Depends(require_roles("hr_recruiter", "hiring_manager", "admin_it")),
+    user: dict = Depends(require_roles("hiring_manager", "admin_it")),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     stmt = select(DBJobPosting).where(DBJobPosting.id == job_id)
@@ -515,6 +569,12 @@ async def update_job(
     update_data = payload.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(400, "Tidak ada perubahan")
+    # Block modifications to core criteria/weights for closed/expired jobs
+    # Allow metadata (title, dates, location, status) to be updated so they can be re-opened.
+    blocked_keys_for_closed = {"criteria", "weights", "responsibilities", "education_requirement", "education_level", "education_major", "min_experience_years"}
+    attempted_blocked_keys = blocked_keys_for_closed.intersection(update_data.keys())
+    if attempted_blocked_keys and _is_job_closed(job):
+        raise HTTPException(400, "Lowongan sudah ditutup. Kriteria dan bobot tidak dapat dimodifikasi.")
     for k, v in update_data.items():
         setattr(job, k, v)
     from sqlalchemy.orm.attributes import flag_modified
@@ -531,7 +591,7 @@ async def update_job(
 @api.post("/jobs/{job_id}/reextract")
 async def reextract_job(
     job_id: str,
-    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+    user: dict = Depends(require_roles("hiring_manager", "admin_it")),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     stmt = select(DBJobPosting).where(DBJobPosting.id == job_id)
@@ -539,6 +599,8 @@ async def reextract_job(
     job = res.scalar_one_or_none()
     if not job:
         raise HTTPException(404, "JD tidak ditemukan")
+    if _is_job_closed(job):
+        raise HTTPException(400, "Lowongan sudah ditutup dan tidak dapat dimodifikasi")
     cfg = await _get_ai_config_for_task(session, "parsing")
     extracted = await extract_jd_criteria(job.raw_jd_text, cfg)
     import uuid as _u
@@ -568,7 +630,7 @@ async def reextract_job(
 async def add_criterion(
     job_id: str,
     payload: CriterionInput,
-    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+    user: dict = Depends(require_roles("hiring_manager", "admin_it")),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     if payload.type not in ("must", "nice"):
@@ -582,6 +644,8 @@ async def add_criterion(
     job = res.scalar_one_or_none()
     if not job:
         raise HTTPException(404, "JD tidak ditemukan")
+    if _is_job_closed(job):
+        raise HTTPException(400, "Lowongan sudah ditutup dan tidak dapat dimodifikasi")
     import uuid as _u
 
     item = {
@@ -605,7 +669,7 @@ async def update_criterion(
     job_id: str,
     criterion_id: str,
     payload: CriterionInput,
-    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+    user: dict = Depends(require_roles("hiring_manager", "admin_it")),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     if payload.type not in ("must", "nice"):
@@ -617,6 +681,8 @@ async def update_criterion(
     job = res.scalar_one_or_none()
     if not job:
         raise HTTPException(404, "JD tidak ditemukan")
+    if _is_job_closed(job):
+        raise HTTPException(400, "Lowongan sudah ditutup dan tidak dapat dimodifikasi")
     criteria = list(job.criteria or [])
     found = False
     for c in criteria:
@@ -640,7 +706,7 @@ async def update_criterion(
 async def delete_criterion(
     job_id: str,
     criterion_id: str,
-    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+    user: dict = Depends(require_roles("hiring_manager", "admin_it")),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     stmt = select(DBJobPosting).where(DBJobPosting.id == job_id)
@@ -648,6 +714,8 @@ async def delete_criterion(
     job = res.scalar_one_or_none()
     if not job:
         raise HTTPException(404, "JD tidak ditemukan")
+    if _is_job_closed(job):
+        raise HTTPException(400, "Lowongan sudah ditutup dan tidak dapat dimodifikasi")
     criteria = list(job.criteria or [])
     original_len = len(criteria)
     criteria = [c for c in criteria if c.get("id") != criterion_id]
@@ -664,7 +732,7 @@ async def delete_criterion(
 async def update_education(
     job_id: str,
     payload: EducationUpdate,
-    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+    user: dict = Depends(require_roles("hiring_manager", "admin_it")),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     stmt = select(DBJobPosting).where(DBJobPosting.id == job_id)
@@ -672,6 +740,8 @@ async def update_education(
     job = res.scalar_one_or_none()
     if not job:
         raise HTTPException(404, "JD tidak ditemukan")
+    if _is_job_closed(job):
+        raise HTTPException(400, "Lowongan sudah ditutup dan tidak dapat dimodifikasi")
     weights = dict(job.weights or {})
     weights_changed = False
     if payload.edu_level_pct is not None or payload.edu_major_pct is not None:
@@ -737,6 +807,12 @@ async def _screen_candidate_for_job(
     total = calculate_total_score(evaluation, weights)
     recommendation = recommendation_from_score(total, weights)
 
+    parsing_usage = parsed.get("_usage", {}) or {}
+    scoring_usage = evaluation.get("_usage", {}) or {}
+    prompt_tokens = int(parsing_usage.get("prompt_tokens", 0)) + int(scoring_usage.get("prompt_tokens", 0))
+    completion_tokens = int(parsing_usage.get("completion_tokens", 0)) + int(scoring_usage.get("completion_tokens", 0))
+    total_tokens = int(parsing_usage.get("total_tokens", 0)) + int(scoring_usage.get("total_tokens", 0))
+
     sr_id = str(uuid.uuid4())
     sr = DBScreeningResult(
         id=sr_id,
@@ -756,45 +832,104 @@ async def _screen_candidate_for_job(
         decided_by=None,
         decided_at=None,
         created_at=datetime.now(timezone.utc).isoformat(),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
     )
     session.add(sr)
     await session.commit()
     return sr_id
 
 
+# Semaphore global untuk memproses screening LLM satu demi satu secara bergantian (Queue)
+# Hal ini mencegah overload request bersamaan ke AI yang memicu '504 Gateway Time-out'
+LLM_SEMAPHORE = asyncio.Semaphore(1)
+
+
+def _build_cv_search_text(cand_name: str, parsed: dict) -> str:
+    summary = parsed.get("summary") or ""
+    skills = ", ".join(parsed.get("skills", []) or [])
+    hard_skills = ", ".join(parsed.get("hard_skills", []) or [])
+    soft_skills = ", ".join(parsed.get("soft_skills", []) or [])
+    
+    edu_list = []
+    for edu in parsed.get("education", []) or []:
+        degree = edu.get("degree") or ""
+        inst = edu.get("institution") or ""
+        edu_list.append(f"{degree} di {inst}")
+    edu_str = ", ".join(edu_list)
+    
+    work_list = []
+    for w in parsed.get("work_history", []) or []:
+        pos = w.get("position") or ""
+        comp = w.get("company") or ""
+        work_list.append(f"{pos} di {comp}")
+    work_str = ", ".join(work_list)
+    
+    parts = []
+    if cand_name: parts.append(f"Nama: {cand_name}")
+    if summary: parts.append(f"Ringkasan: {summary}")
+    if skills: parts.append(f"Keahlian: {skills}")
+    if hard_skills: parts.append(f"Keahlian Teknis: {hard_skills}")
+    if soft_skills: parts.append(f"Keahlian Non-Teknis: {soft_skills}")
+    if edu_str: parts.append(f"Pendidikan: {edu_str}")
+    if work_str: parts.append(f"Pengalaman Kerja: {work_str}")
+    
+    return "\n".join(parts)
+
+
 async def _process_candidate(candidate_id: str, job_id: str) -> None:
     """Background task: parse CV + evaluate against JD."""
-    try:
-        async with async_session() as session:
-            stmt = select(DBCandidate).where(DBCandidate.id == candidate_id)
-            res = await session.execute(stmt)
-            cand = res.scalar_one_or_none()
-            if not cand:
-                return
-            parsing_cfg = await _get_ai_config_for_task(session, "parsing")
-            scoring_cfg = await _get_ai_config_for_task(session, "scoring")
-            cand.status = "processing"
-            await session.commit()
-            
-            parsed = await parse_cv(cand.raw_text, parsing_cfg)
-            cand.name = parsed.get("name") or cand.name or "Unknown"
-            cand.email = parsed.get("email", "")
-            cand.phone = parsed.get("phone", "")
-            cand.parsed = parsed
-            cand.status = "parsed"
-            await session.commit()
-            
-            await _screen_candidate_for_job(session, candidate_id, job_id, parsed, scoring_cfg)
-    except Exception as e:
-        logger.exception("Candidate processing failed")
-        async with async_session() as session:
-            stmt = select(DBCandidate).where(DBCandidate.id == candidate_id)
-            res = await session.execute(stmt)
-            cand = res.scalar_one_or_none()
-            if cand:
-                cand.status = "failed"
-                cand.error_message = str(e)
+    async with LLM_SEMAPHORE:
+        try:
+            async with async_session() as session:
+                stmt = select(DBCandidate).where(DBCandidate.id == candidate_id)
+                res = await session.execute(stmt)
+                cand = res.scalar_one_or_none()
+                if not cand:
+                    return
+                parsing_cfg = await _get_ai_config_for_task(session, "parsing")
+                scoring_cfg = await _get_ai_config_for_task(session, "scoring")
+                cand.status = "processing"
                 await session.commit()
+                
+                parsed = await parse_cv(cand.raw_text, parsing_cfg)
+                cand.name = parsed.get("name") or cand.name or "Unknown"
+                cand.email = parsed.get("email", "")
+                cand.phone = parsed.get("phone", "")
+                cand.parsed = parsed
+                cand.status = "parsed"
+                
+                # Generate cv_embedding
+                try:
+                    from ai_service import generate_embedding
+                    embeddings_cfg = await _get_ai_config_for_task(session, "embeddings")
+                    search_text = _build_cv_search_text(cand.name, parsed)
+                    cand.cv_embedding = await generate_embedding(search_text, embeddings_cfg)
+                except Exception as emb_err:
+                    logger.error(f"Gagal generate embedding untuk kandidat {candidate_id}: {emb_err}")
+                
+                await session.commit()
+                
+                await _screen_candidate_for_job(session, candidate_id, job_id, parsed, scoring_cfg)
+        except Exception as e:
+            logger.exception("Candidate processing failed")
+            error_msg = f"{type(e).__name__}: {str(e)}" if str(e) else repr(e)
+            if "ReadTimeout" in error_msg or "timeout" in error_msg.lower():
+                error_msg = f"Koneksi AI Timeout (Batas waktu habis saat menganalisis CV). Silakan klik 'Screening Ulang' untuk mencoba kembali. Detail: {error_msg}"
+            elif "API key" in error_msg or "Authorization" in error_msg:
+                error_msg = f"Konfigurasi API Key AI tidak valid atau tidak ditemukan di server. Detail: {error_msg}"
+            elif "JSONDecodeError" in error_msg or "json" in error_msg.lower():
+                error_msg = f"Gagal mengekstrak data dari respons AI (Format JSON tidak sesuai). Detail: {error_msg}"
+            
+            async with async_session() as session:
+                stmt = select(DBCandidate).where(DBCandidate.id == candidate_id)
+                res = await session.execute(stmt)
+                cand = res.scalar_one_or_none()
+                if cand:
+                    cand.status = "failed"
+                    cand.error_message = error_msg
+                    await session.commit()
 
 
 async def _rescreen_pool_candidate(candidate_id: str, job_id: str) -> None:
@@ -827,7 +962,7 @@ async def upload_cv(
     job_id: str,
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
-    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+    user: dict = Depends(require_roles("hr_recruiter", "hiring_manager", "admin_it")),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     stmt = select(DBJobPosting).where(DBJobPosting.id == job_id)
@@ -835,6 +970,8 @@ async def upload_cv(
     job = res.scalar_one_or_none()
     if not job:
         raise HTTPException(404, "JD tidak ditemukan")
+    if _is_job_closed(job):
+        raise HTTPException(400, "Lowongan sudah ditutup, CV tidak dapat diunggah")
     if len(files) > 500:
         raise HTTPException(400, "Maksimum 500 CV per sesi")
     import uuid
@@ -847,6 +984,17 @@ async def upload_cv(
         text = re.sub(r'[ \t]+', ' ', text)
         text = re.sub(r'\n+', '\n', text).strip()
         cid = str(uuid.uuid4())
+        
+        # Save file to uploads directory
+        uploads_dir = Path(__file__).parent / "uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        file_path = uploads_dir / f"{cid}_{f.filename}"
+        try:
+            with open(file_path, "wb") as buffer:
+                buffer.write(content)
+        except Exception as e:
+            logger.error(f"Gagal menyimpan file CV: {e}")
+
         doc = DBCandidate(
             id=cid,
             name="Memproses...",
@@ -885,7 +1033,9 @@ async def list_job_candidates(
         c.id: {
             "name": c.name,
             "email": c.email,
+            "phone": c.phone or "",
             "status": c.status,
+            "error_message": c.error_message or "",
             "created_at": c.created_at,
         }
         for c in candidates
@@ -916,7 +1066,12 @@ async def list_job_candidates(
                 "created_at": r.created_at,
                 "candidate_name": c.get("name", "Unknown"),
                 "candidate_email": c.get("email", ""),
+                "candidate_phone": c.get("phone", ""),
                 "candidate_status": c.get("status", "parsed"),
+                "candidate_error": c.get("error_message", ""),
+                "prompt_tokens": r.prompt_tokens or 0,
+                "completion_tokens": r.completion_tokens or 0,
+                "total_tokens": r.total_tokens or 0,
             }
         )
     out.sort(key=lambda x: x["total_score"], reverse=True)
@@ -930,22 +1085,148 @@ async def list_job_candidates(
                     "candidate_id": c.id,
                     "candidate_name": c.name or "Memproses...",
                     "candidate_email": c.email or "",
+                    "candidate_phone": c.phone or "",
                     "candidate_status": c.status or "pending",
+                    "candidate_error": c.error_message or "",
                     "total_score": 0,
                     "recommendation": "pending",
                     "decision": "pending",
                     "rationale_summary": "",
                     "created_at": c.created_at,
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
                 }
             )
     return out
+
+
+@api.get("/candidates/{candidate_id}/cv")
+async def get_candidate_cv(
+    candidate_id: str,
+    session: AsyncSession = Depends(get_db)
+):
+    from fastapi.responses import FileResponse
+    stmt = select(DBCandidate).where(DBCandidate.id == candidate_id)
+    res = await session.execute(stmt)
+    cand = res.scalar_one_or_none()
+    if not cand:
+        raise HTTPException(404, "Kandidat tidak ditemukan")
+    
+    uploads_dir = Path(__file__).parent / "uploads"
+    # Find file starting with candidate_id
+    files = list(uploads_dir.glob(f"{candidate_id}_*"))
+    if files:
+        path = files[0]
+    else:
+        # Fallback to root directory
+        root_dir = Path(__file__).parent.parent
+        fallback_path = root_dir / cand.file_name
+        if fallback_path.exists():
+            path = fallback_path
+        else:
+            raise HTTPException(404, f"File CV '{cand.file_name}' tidak ditemukan")
+            
+    media_type = "application/octet-stream"
+    if cand.file_name.lower().endswith(".pdf"):
+        media_type = "application/pdf"
+    elif cand.file_name.lower().endswith(".png"):
+        media_type = "image/png"
+    elif cand.file_name.lower().endswith((".jpg", ".jpeg")):
+        media_type = "image/jpeg"
+        
+    return FileResponse(
+        path=path,
+        filename=cand.file_name,
+        media_type=media_type
+    )
+
+
+@api.post("/jobs/{job_id}/candidates/rescreen-all")
+async def rescreen_all_candidates(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(require_roles("hiring_manager", "admin_it")),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    stmt = select(DBCandidate).where(DBCandidate.job_posting_id == job_id)
+    res = await session.execute(stmt)
+    candidates = res.scalars().all()
+    
+    if not candidates:
+        raise HTTPException(400, "Tidak ada kandidat untuk diproses ulang")
+        
+    for c in candidates:
+        c.status = "pending"
+        c.error_message = None
+        
+        # Delete previous screening result if exists
+        stmt_sr = select(DBScreeningResult).where(
+            and_(
+                DBScreeningResult.candidate_id == c.id,
+                DBScreeningResult.job_posting_id == job_id
+            )
+        )
+        res_sr = await session.execute(stmt_sr)
+        sr = res_sr.scalar_one_or_none()
+        if sr:
+            await session.delete(sr)
+            
+    await session.commit()
+    
+    for c in candidates:
+        background_tasks.add_task(_process_candidate, c.id, job_id)
+        
+    return {"queued": len(candidates)}
+
+
+@api.post("/jobs/{job_id}/candidates/{candidate_id}/rescreen")
+async def rescreen_candidate(
+    job_id: str,
+    candidate_id: str,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(require_roles("hr_recruiter", "hiring_manager", "admin_it")),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    stmt_c = select(DBCandidate).where(
+        and_(
+            DBCandidate.id == candidate_id,
+            DBCandidate.job_posting_id == job_id
+        )
+    )
+    res_c = await session.execute(stmt_c)
+    cand = res_c.scalar_one_or_none()
+    if not cand:
+        raise HTTPException(404, "Kandidat tidak ditemukan")
+        
+    # Reset candidate status and clear error
+    cand.status = "pending"
+    cand.error_message = None
+    
+    # Delete previous screening result if exists
+    stmt_sr = select(DBScreeningResult).where(
+        and_(
+            DBScreeningResult.candidate_id == candidate_id,
+            DBScreeningResult.job_posting_id == job_id
+        )
+    )
+    res_sr = await session.execute(stmt_sr)
+    sr = res_sr.scalar_one_or_none()
+    if sr:
+        await session.delete(sr)
+        
+    await session.commit()
+    
+    # Queue background task to process candidate again
+    background_tasks.add_task(_process_candidate, candidate_id, job_id)
+    return {"status": "processing"}
 
 
 @api.delete("/jobs/{job_id}/candidates/{candidate_id}")
 async def delete_candidate(
     job_id: str,
     candidate_id: str,
-    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+    user: dict = Depends(require_roles("hr_recruiter", "hiring_manager", "admin_it")),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     stmt_sr = select(DBScreeningResult).where(DBScreeningResult.candidate_id == candidate_id)
@@ -966,10 +1247,16 @@ async def delete_candidate(
 @api.delete("/jobs/{job_id}")
 async def delete_job(
     job_id: str,
-    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+    user: dict = Depends(require_roles("hiring_manager", "admin_it")),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     from sqlalchemy import func
+    # Fetch job first to check if it is closed
+    stmt_check = select(DBJobPosting).where(DBJobPosting.id == job_id)
+    res_check = await session.execute(stmt_check)
+    job_check = res_check.scalar_one_or_none()
+    if job_check and _is_job_closed(job_check):
+        raise HTTPException(400, "Lowongan sudah ditutup dan tidak dapat dihapus")
     stmt_c = select(DBCandidate).where(DBCandidate.job_posting_id == job_id)
     res_c = await session.execute(stmt_c)
     candidates = res_c.scalars().all()
@@ -1027,6 +1314,9 @@ async def get_screening(
         "decided_by": sr.decided_by,
         "decided_at": sr.decided_at,
         "created_at": sr.created_at,
+        "prompt_tokens": sr.prompt_tokens or 0,
+        "completion_tokens": sr.completion_tokens or 0,
+        "total_tokens": sr.total_tokens or 0,
     }
     cand_dict = {
         "id": cand.id,
@@ -1045,6 +1335,264 @@ async def get_screening(
 
 
 # ============ TALENT POOL ============
+@api.post("/talent-pool/search")
+async def search_talent_pool(
+    payload: dict,
+    user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    query = payload.get("query", "").strip()
+    if not query:
+        raise HTTPException(400, "Query pencarian tidak boleh kosong")
+        
+    embeddings_cfg = await _get_ai_config_for_task(session, "embeddings")
+    
+    try:
+        from ai_service import generate_embedding
+        query_embedding = await generate_embedding(query, embeddings_cfg)
+    except Exception as e:
+        logger.error(f"Gagal generate embedding untuk search query: {e}")
+        raise HTTPException(500, f"Gagal memproses pencarian semantik: {str(e)}")
+        
+    # Get all parsed candidates that have embeddings
+    stmt_c = select(DBCandidate).where(
+        and_(
+            DBCandidate.status == "parsed",
+            DBCandidate.cv_embedding.isnot(None)
+        )
+    )
+    res_c = await session.execute(stmt_c)
+    candidates = res_c.scalars().all()
+    
+    # Get stats
+    stmt_stats = select(
+        DBScreeningResult.candidate_id,
+        func.max(DBScreeningResult.total_score).label("best_score"),
+        func.count(DBScreeningResult.id).label("screenings_count"),
+        func.sum(
+            case(
+                (DBScreeningResult.decision == "shortlisted", 1),
+                else_=0
+            )
+        ).label("shortlisted_count")
+    ).group_by(DBScreeningResult.candidate_id)
+    res_stats = await session.execute(stmt_stats)
+    stats_rows = res_stats.all()
+    stats = {}
+    for row in stats_rows:
+        stats[row.candidate_id] = {
+            "best_score": row.best_score or 0,
+            "screenings_count": row.screenings_count or 0,
+            "shortlisted_count": int(row.shortlisted_count or 0),
+        }
+        
+    import numpy as np
+    q_vec = np.array(query_embedding)
+    q_norm = np.linalg.norm(q_vec)
+    
+    if q_norm == 0:
+        raise HTTPException(500, "AI Provider mengembalikan vektor kosong untuk query ini.")
+        
+    out = []
+    for c in candidates:
+        if not c.cv_embedding or len(c.cv_embedding) != len(query_embedding):
+            continue
+            
+        c_vec = np.array(c.cv_embedding)
+        c_norm = np.linalg.norm(c_vec)
+        if c_norm == 0:
+            continue
+            
+        score = float(np.dot(q_vec, c_vec) / (q_norm * c_norm))
+        pct_score = max(0.0, min(100.0, (score + 1.0) / 2.0 * 100.0))
+        
+        s = stats.get(c.id, {})
+        parsed = _ensure_dict(c.parsed)
+        work_history = parsed.get("work_history", [])
+        current_position = ""
+        if work_history and isinstance(work_history, list) and len(work_history) > 0:
+            if isinstance(work_history[0], dict):
+                current_position = work_history[0].get("position", "")
+                
+        out.append({
+            "id": c.id,
+            "name": c.name or "Unknown",
+            "email": c.email or "",
+            "phone": c.phone or "",
+            "years_of_experience": parsed.get("years_of_experience", 0),
+            "top_skills": (parsed.get("skills", []) or [])[:6],
+            "current_position": current_position,
+            "best_score": s.get("best_score", 0),
+            "screenings_count": s.get("screenings_count", 0),
+            "shortlisted_count": s.get("shortlisted_count", 0),
+            "created_at": c.created_at,
+            "similarity_score": round(pct_score, 2)
+        })
+        
+    # Sort by similarity score descending
+    out.sort(key=lambda x: x["similarity_score"], reverse=True)
+    
+    # Filter dan limit hasil
+    # Hanya ambil yang similarity score nya >= 65% dan maksimal top 15 untuk LLM RAG
+    filtered_out = [x for x in out if x["similarity_score"] >= 65.0][:15]
+    
+    if not filtered_out:
+        # Still get cumulative usage
+        stmt_sum = select(
+            func.sum(DBAISearchLog.prompt_tokens).label("prompt_sum"),
+            func.sum(DBAISearchLog.completion_tokens).label("completion_sum"),
+            func.sum(DBAISearchLog.total_tokens).label("total_sum")
+        )
+        res_sum = await session.execute(stmt_sum)
+        sum_row = res_sum.first()
+        cumulative_prompt = int(sum_row.prompt_sum or 0) if sum_row else 0
+        cumulative_completion = int(sum_row.completion_sum or 0) if sum_row else 0
+        cumulative_total = int(sum_row.total_sum or 0) if sum_row else 0
+        
+        USD_TO_IDR = 17900
+        cum_cost_usd = (cumulative_prompt * 0.30 / 1000000) + (cumulative_completion * 2.50 / 1000000)
+        cum_cost_rp = round(cum_cost_usd * USD_TO_IDR, 2)
+        
+        return {
+            "candidates": [],
+            "search_usage": None,
+            "cumulative_usage": {
+                "prompt_tokens": cumulative_prompt,
+                "completion_tokens": cumulative_completion,
+                "total_tokens": cumulative_total,
+                "cost_rp": cum_cost_rp
+            }
+        }
+        
+    # Tahap 2: AI Chat Filtering (RAG)
+    try:
+        scoring_cfg = await _get_ai_config_for_task(session, "scoring")
+        
+        # Prepare lightweight candidate profiles for LLM
+        candidate_profiles = []
+        for c_dict in filtered_out:
+            # Cari dari object candidates yang sudah ada
+            c_obj = next((cand for cand in candidates if cand.id == c_dict["id"]), None)
+            if c_obj:
+                parsed_data = _ensure_dict(c_obj.parsed)
+                education = parsed_data.get("education", [])
+                edu_str = ", ".join([f"{e.get('degree','')} {e.get('major','')} at {e.get('institution','')}" for e in education if isinstance(e, dict)])
+            else:
+                edu_str = ""
+            
+            candidate_profiles.append({
+                "id": c_dict["id"],
+                "name": c_dict["name"],
+                "current_position": c_dict["current_position"],
+                "skills": c_dict["top_skills"],
+                "education": edu_str,
+                "experience_years": c_dict["experience_years"] if "experience_years" in c_dict else c_dict["years_of_experience"]
+            })
+            
+        import json
+        profiles_json = json.dumps(candidate_profiles, ensure_ascii=False)
+        
+        sys_prompt = (
+            "You are an expert HR AI assistant. Your task is to filter a list of candidates based strictly on the user's search query.\n"
+            "Return a JSON object with a single key 'matched_candidates' containing an array of objects.\n"
+            "Each object must have 'id' (the candidate ID) and 'ai_reason' (a brief 1-2 sentence explanation of why they match the query, in Indonesian).\n\n"
+            "CRITICAL INSTRUCTIONS:\n"
+            "1. Be extremely strict. ONLY include candidates that genuinely meet all the explicit criteria in the query (e.g., degree level, major, skills, experience).\n"
+            "2. If the query specifies an education level and major like 'S1 Ekonomi', you MUST reject candidates with other degrees or majors (e.g. reject 'S1 Teknik Elektro', reject 'D3 Teknik Informatika'). Do not be lenient.\n"
+            "3. If a candidate does not match the query, DO NOT include them in the 'matched_candidates' list.\n"
+            "4. If no candidates match, return the JSON object with an empty array: {\"matched_candidates\": []}."
+        )
+        user_prompt = f"User Search Query: '{query}'\n\nCandidates:\n{profiles_json}"
+        
+        llm_response = await asyncio.wait_for(
+            call_llm(sys_prompt, user_prompt, scoring_cfg, response_format={"type": "json_object"}),
+            timeout=45
+        )
+        
+        # Track token usage of the search query
+        usage = getattr(llm_response, "usage", {}) or {}
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or 0)
+        total_tokens = int(usage.get("total_tokens") or 0)
+        if total_tokens == 0:
+            total_tokens = prompt_tokens + completion_tokens
+            
+        # Log to DBAISearchLog
+        import uuid
+        from models import DBAISearchLog
+        search_log = DBAISearchLog(
+            id=str(uuid.uuid4()),
+            query=query,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            created_at=datetime.now(timezone.utc).isoformat()
+        )
+        session.add(search_log)
+        await session.commit()
+        
+        try:
+            llm_data = json.loads(llm_response)
+        except json.JSONDecodeError:
+            import re
+            match = re.search(r'\{.*\}', llm_response, re.DOTALL)
+            if match:
+                llm_data = json.loads(match.group(0))
+            else:
+                llm_data = {"matched_candidates": []}
+                
+        matched_list = llm_data.get("matched_candidates", [])
+        # handle possible string IDs or int IDs
+        matched_dict = {str(item["id"]): item.get("ai_reason", "") for item in matched_list if "id" in item}
+        
+        final_out = []
+        for c in filtered_out:
+            cid_str = str(c["id"])
+            if cid_str in matched_dict:
+                c["ai_reason"] = matched_dict[cid_str]
+                final_out.append(c)
+                
+        # Calculate cost
+        USD_TO_IDR = 17900
+        cost_usd = (prompt_tokens * 0.30 / 1000000) + (completion_tokens * 2.50 / 1000000)
+        cost_rp = round(cost_usd * USD_TO_IDR, 2)
+        
+        # Get cumulative usage
+        stmt_sum = select(
+            func.sum(DBAISearchLog.prompt_tokens).label("prompt_sum"),
+            func.sum(DBAISearchLog.completion_tokens).label("completion_sum"),
+            func.sum(DBAISearchLog.total_tokens).label("total_sum")
+        )
+        res_sum = await session.execute(stmt_sum)
+        sum_row = res_sum.first()
+        cumulative_prompt = int(sum_row.prompt_sum or 0) if sum_row else 0
+        cumulative_completion = int(sum_row.completion_sum or 0) if sum_row else 0
+        cumulative_total = int(sum_row.total_sum or 0) if sum_row else 0
+        
+        cum_cost_usd = (cumulative_prompt * 0.30 / 1000000) + (cumulative_completion * 2.50 / 1000000)
+        cum_cost_rp = round(cum_cost_usd * USD_TO_IDR, 2)
+        
+        return {
+            "candidates": final_out,
+            "search_usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "cost_rp": cost_rp
+            },
+            "cumulative_usage": {
+                "prompt_tokens": cumulative_prompt,
+                "completion_tokens": cumulative_completion,
+                "total_tokens": cumulative_total,
+                "cost_rp": cum_cost_rp
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"RAG Filtering failed: {e}")
+        raise HTTPException(500, f"Gagal memproses penyaringan AI: {str(e)}")
+
+
 @api.get("/talent-pool")
 async def list_talent_pool(
     user: dict = Depends(get_current_user),
@@ -1147,6 +1695,9 @@ async def get_pool_candidate(
             "created_at": s.created_at,
             "job_title": j.title if j else "—",
             "job_department": j.department if j else "",
+            "prompt_tokens": s.prompt_tokens or 0,
+            "completion_tokens": s.completion_tokens or 0,
+            "total_tokens": s.total_tokens or 0,
         })
     cand_dict = {
         "id": cand.id,
@@ -1173,7 +1724,7 @@ async def screen_from_pool(
     job_id: str,
     payload: ScreenFromPoolRequest,
     background_tasks: BackgroundTasks,
-    user: dict = Depends(require_roles("hr_recruiter", "admin_it")),
+    user: dict = Depends(require_roles("hr_recruiter", "hiring_manager", "admin_it")),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     stmt_job = select(DBJobPosting).where(DBJobPosting.id == job_id)
@@ -1307,9 +1858,6 @@ async def update_provider(
     if not cfg:
         raise HTTPException(404, "Konfigurasi tidak ditemukan")
     update_data = payload.model_dump(exclude_unset=True)
-    if update_data.get("is_active"):
-        deact_stmt = update(DBAIProviderConfig).where(DBAIProviderConfig.id != cfg_id).values(is_active=False)
-        await session.execute(deact_stmt)
     for k, v in update_data.items():
         setattr(cfg, k, v)
     await session.commit()
@@ -1403,15 +1951,26 @@ async def test_provider(
 ) -> dict:
     try:
         cfg = payload.model_dump()
-        result = await asyncio.wait_for(
-            call_llm(
-                "You are a connectivity test. Respond with the exact text: OK",
-                "Reply OK only.",
-                cfg,
-            ),
-            timeout=30,
-        )
-        return {"success": True, "response": result[:200]}
+        is_embedding_model = "embed" in (cfg.get("model_name") or "").lower()
+        if is_embedding_model:
+            result = await asyncio.wait_for(
+                generate_embedding("Test connection", cfg),
+                timeout=30,
+            )
+            if isinstance(result, list) and len(result) > 0:
+                return {"success": True, "response": f"Embedding vector generated successfully with {len(result)} dimensions."}
+            else:
+                return {"success": False, "error": "No vector returned from embedding API."}
+        else:
+            result = await asyncio.wait_for(
+                call_llm(
+                    "You are a connectivity test. Respond with the exact text: OK",
+                    "Reply OK only.",
+                    cfg,
+                ),
+                timeout=30,
+            )
+            return {"success": True, "response": result[:200]}
     except Exception as e:
         return {"success": False, "error": str(e)[:300]}
 
@@ -1435,15 +1994,26 @@ async def test_existing_provider(
             "llm_provider": cfg_obj.llm_provider,
             "model_name": cfg_obj.model_name,
         }
-        result = await asyncio.wait_for(
-            call_llm(
-                "You are a connectivity test. Respond with the exact text: OK",
-                "Reply OK only.",
-                cfg,
-            ),
-            timeout=30,
-        )
-        return {"success": True, "response": result[:200]}
+        is_embedding_model = "embed" in (cfg.get("model_name") or "").lower()
+        if is_embedding_model:
+            result = await asyncio.wait_for(
+                generate_embedding("Test connection", cfg),
+                timeout=30,
+            )
+            if isinstance(result, list) and len(result) > 0:
+                return {"success": True, "response": f"Embedding vector generated successfully with {len(result)} dimensions."}
+            else:
+                return {"success": False, "error": "No vector returned from embedding API."}
+        else:
+            result = await asyncio.wait_for(
+                call_llm(
+                    "You are a connectivity test. Respond with the exact text: OK",
+                    "Reply OK only.",
+                    cfg,
+                ),
+                timeout=30,
+            )
+            return {"success": True, "response": result[:200]}
     except Exception as e:
         return {"success": False, "error": str(e)[:300]}
 
@@ -1453,6 +2023,8 @@ async def test_existing_provider(
 class TaskAssignmentUpdate(BaseModel):
     parsing_provider_id: Optional[str] = None
     scoring_provider_id: Optional[str] = None
+    embeddings_provider_id: Optional[str] = None
+
 
 
 @api.get("/config/task-assignments")
@@ -1465,6 +2037,7 @@ async def get_task_assignments(
     settings = res.scalar_one_or_none()
     parsing_id = settings.parsing_provider_id if settings else None
     scoring_id = settings.scoring_provider_id if settings else None
+    embeddings_id = settings.embeddings_provider_id if settings else None
 
     async def _resolve(pid: Optional[str]) -> Optional[dict]:
         if not pid:
@@ -1494,8 +2067,10 @@ async def get_task_assignments(
     return {
         "parsing_provider_id": parsing_id,
         "scoring_provider_id": scoring_id,
+        "embeddings_provider_id": embeddings_id,
         "parsing_provider": await _resolve(parsing_id),
         "scoring_provider": await _resolve(scoring_id),
+        "embeddings_provider": await _resolve(embeddings_id),
     }
 
 
@@ -1511,7 +2086,7 @@ async def update_task_assignments(
     if not settings:
         settings = DBSystemSettings(id="task_assignments")
         session.add(settings)
-    for field in ("parsing_provider_id", "scoring_provider_id"):
+    for field in ("parsing_provider_id", "scoring_provider_id", "embeddings_provider_id"):
         val = getattr(payload, field)
         if val:
             p_stmt = select(DBAIProviderConfig).where(DBAIProviderConfig.id == val)
@@ -1527,6 +2102,7 @@ async def update_task_assignments(
         "status": "saved",
         "parsing_provider_id": settings.parsing_provider_id,
         "scoring_provider_id": settings.scoring_provider_id,
+        "embeddings_provider_id": settings.embeddings_provider_id,
     }
 
 
@@ -1536,7 +2112,21 @@ async def dashboard_stats(
     user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    active_jobs = (await session.execute(select(func.count()).select_from(DBJobPosting).where(DBJobPosting.status == "active"))).scalar() or 0
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    active_jobs = (await session.execute(
+        select(func.count())
+        .select_from(DBJobPosting)
+        .where(
+            and_(
+                DBJobPosting.status == "active",
+                or_(
+                    DBJobPosting.end_date.is_(None),
+                    DBJobPosting.end_date == "",
+                    DBJobPosting.end_date >= today_str
+                )
+            )
+        )
+    )).scalar() or 0
     total_jobs = (await session.execute(select(func.count()).select_from(DBJobPosting))).scalar() or 0
     total_candidates = (await session.execute(select(func.count()).select_from(DBCandidate))).scalar() or 0
     total_screenings = (await session.execute(select(func.count()).select_from(DBScreeningResult))).scalar() or 0
@@ -1561,6 +2151,39 @@ async def dashboard_stats(
     recent_jobs_res = await session.execute(recent_jobs_stmt)
     recent_jobs = [_job_to_dict(j) for j in recent_jobs_res.scalars().all()]
 
+    # Calculate token usage from screening results
+    stmt_scr_tokens = select(
+        func.sum(DBScreeningResult.prompt_tokens).label("prompt_sum"),
+        func.sum(DBScreeningResult.completion_tokens).label("completion_sum"),
+        func.sum(DBScreeningResult.total_tokens).label("total_sum")
+    )
+    res_scr_tokens = await session.execute(stmt_scr_tokens)
+    scr_tokens_row = res_scr_tokens.first()
+    scr_prompt = int(scr_tokens_row.prompt_sum or 0) if scr_tokens_row else 0
+    scr_completion = int(scr_tokens_row.completion_sum or 0) if scr_tokens_row else 0
+    scr_total = int(scr_tokens_row.total_sum or 0) if scr_tokens_row else 0
+
+    # Calculate token usage from AI search logs
+    stmt_search_tokens = select(
+        func.sum(DBAISearchLog.prompt_tokens).label("prompt_sum"),
+        func.sum(DBAISearchLog.completion_tokens).label("completion_sum"),
+        func.sum(DBAISearchLog.total_tokens).label("total_sum")
+    )
+    res_search_tokens = await session.execute(stmt_search_tokens)
+    search_tokens_row = res_search_tokens.first()
+    search_prompt = int(search_tokens_row.prompt_sum or 0) if search_tokens_row else 0
+    search_completion = int(search_tokens_row.completion_sum or 0) if search_tokens_row else 0
+    search_total = int(search_tokens_row.total_sum or 0) if search_tokens_row else 0
+
+    grand_prompt = scr_prompt + search_prompt
+    grand_completion = scr_completion + search_completion
+    grand_total = scr_total + search_total
+
+    # Cost Gemini 2.5 Flash: input: $0.30/1M, output: $2.50/1M, kurs $1 = Rp17.900
+    USD_TO_IDR = 17900
+    grand_cost_usd = (grand_prompt * 0.30 / 1000000) + (grand_completion * 2.50 / 1000000)
+    grand_cost_rp = round(grand_cost_usd * USD_TO_IDR, 2)
+
     return {
         "active_jobs": active_jobs,
         "total_jobs": total_jobs,
@@ -1569,6 +2192,10 @@ async def dashboard_stats(
         "processed_today": processed_today,
         "score_distribution": dist,
         "recent_jobs": recent_jobs,
+        "total_tokens_used": grand_total,
+        "total_prompt_tokens": grand_prompt,
+        "total_completion_tokens": grand_completion,
+        "total_rupiah_cost": grand_cost_rp,
     }
 
 

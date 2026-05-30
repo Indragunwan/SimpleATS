@@ -11,6 +11,8 @@ const CATEGORIES = [
   { value: "certification", label: "Sertifikasi" },
   { value: "language", label: "Bahasa" },
   { value: "responsibility", label: "Tanggung Jawab" },
+  { value: "gender", label: "Gender" },
+  { value: "city", label: "Kota Tinggal" },
   { value: "custom", label: "Lainnya" },
 ];
 
@@ -58,6 +60,8 @@ export default function CriteriaEditor({ job, onUpdate }) {
     }
   };
 
+  const isClosed = job?.status === "closed";
+
   return (
     <div className="space-y-4" data-testid="criteria-editor">
       {/* Must-Have group */}
@@ -79,6 +83,7 @@ export default function CriteriaEditor({ job, onUpdate }) {
               colorBand="emerald"
               onEdit={() => setEditingId(c.id)}
               onDelete={() => remove(c.id)}
+              isClosed={isClosed}
             />
           )
         }
@@ -86,6 +91,7 @@ export default function CriteriaEditor({ job, onUpdate }) {
         onCancelAdd={() => setAdding(null)}
         onSubmitAdd={(data) => add({ ...data, type: "must" })}
         defaultType="must"
+        isClosed={isClosed}
       />
 
       {/* Nice-to-Have group */}
@@ -107,6 +113,7 @@ export default function CriteriaEditor({ job, onUpdate }) {
               colorBand="zinc"
               onEdit={() => setEditingId(c.id)}
               onDelete={() => remove(c.id)}
+              isClosed={isClosed}
             />
           )
         }
@@ -114,15 +121,16 @@ export default function CriteriaEditor({ job, onUpdate }) {
         onCancelAdd={() => setAdding(null)}
         onSubmitAdd={(data) => add({ ...data, type: "nice" })}
         defaultType="nice"
+        isClosed={isClosed}
       />
 
       {/* Education panel */}
-      <EducationPanel job={job} onUpdate={onUpdate} />
+      <EducationPanel job={job} onUpdate={onUpdate} isClosed={isClosed} />
     </div>
   );
 }
 
-function Group({ title, color, items, renderItem, onAdd, adding, onCancelAdd, onSubmitAdd, defaultType }) {
+function Group({ title, color, items, renderItem, onAdd, adding, onCancelAdd, onSubmitAdd, defaultType, isClosed }) {
   const headerCls =
     color === "emerald"
       ? "text-emerald-700"
@@ -136,15 +144,17 @@ function Group({ title, color, items, renderItem, onAdd, adding, onCancelAdd, on
         <div className={`text-xs uppercase tracking-wider font-medium ${headerCls}`}>
           {title}
         </div>
-        <Button
-          onClick={onAdd}
-          variant="outline"
-          size="sm"
-          className="rounded-sm border-zinc-300 h-7 text-xs"
-          data-testid={`add-${defaultType}-button`}
-        >
-          <Plus size={12} className="mr-1" /> Tambah
-        </Button>
+        {!isClosed && (
+          <Button
+            onClick={onAdd}
+            variant="outline"
+            size="sm"
+            className="rounded-sm border-zinc-300 h-7 text-xs"
+            data-testid={`add-${defaultType}-button`}
+          >
+            <Plus size={12} className="mr-1" /> Tambah
+          </Button>
+        )}
       </div>
 
       {items.length === 0 && !adding ? (
@@ -168,7 +178,7 @@ function Group({ title, color, items, renderItem, onAdd, adding, onCancelAdd, on
   );
 }
 
-function Row({ c, colorBand, onEdit, onDelete }) {
+function Row({ c, colorBand, onEdit, onDelete, isClosed }) {
   const bgCls =
     colorBand === "emerald"
       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
@@ -183,22 +193,24 @@ function Row({ c, colorBand, onEdit, onDelete }) {
         <span className="text-sm text-zinc-900 truncate flex-1">{c.value}</span>
         <WeightChip weight={c.weight || 3} />
       </div>
-      <div className="flex gap-1 shrink-0">
-        <button
-          onClick={onEdit}
-          data-testid={`edit-criterion-${c.id}`}
-          className="p-1.5 hover:bg-zinc-100 rounded-sm text-zinc-500 hover:text-zinc-900"
-        >
-          <Pencil size={12} />
-        </button>
-        <button
-          onClick={onDelete}
-          data-testid={`delete-criterion-${c.id}`}
-          className="p-1.5 hover:bg-rose-50 rounded-sm text-zinc-500 hover:text-rose-700"
-        >
-          <Trash2 size={12} />
-        </button>
-      </div>
+      {!isClosed && (
+        <div className="flex gap-1 shrink-0">
+          <button
+            onClick={onEdit}
+            data-testid={`edit-criterion-${c.id}`}
+            className="p-1.5 hover:bg-zinc-100 rounded-sm text-zinc-500 hover:text-zinc-900"
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            onClick={onDelete}
+            data-testid={`delete-criterion-${c.id}`}
+            className="p-1.5 hover:bg-rose-50 rounded-sm text-zinc-500 hover:text-rose-700"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -306,7 +318,7 @@ function CriterionForm({ initial, onCancel, onSubmit }) {
   );
 }
 
-function EducationPanel({ job, onUpdate }) {
+function EducationPanel({ job, onUpdate, isClosed }) {
   const [editing, setEditing] = useState(false);
   const [level, setLevel] = useState(job.education_level || "");
   const [major, setMajor] = useState(job.education_major || "");
@@ -342,15 +354,17 @@ function EducationPanel({ job, onUpdate }) {
           </div>
         </div>
         {!editing ? (
-          <Button
-            onClick={() => setEditing(true)}
-            variant="outline"
-            size="sm"
-            className="rounded-sm border-zinc-300 h-7 text-xs"
-            data-testid="edit-education"
-          >
-            <Pencil size={12} className="mr-1" /> Edit
-          </Button>
+          !isClosed && (
+            <Button
+              onClick={() => setEditing(true)}
+              variant="outline"
+              size="sm"
+              className="rounded-sm border-zinc-300 h-7 text-xs"
+              data-testid="edit-education"
+            >
+              <Pencil size={12} className="mr-1" /> Edit
+            </Button>
+          )
         ) : (
           <div className="flex gap-2">
             <Button

@@ -182,7 +182,7 @@ def created_job(session, tokens):
     r = session.post(
         f"{API}/jobs",
         data=data,
-        headers=_hdr(tokens, "hr"),
+        headers=_hdr(tokens, "manager"),
         timeout=90,  # LLM extraction sync
     )
     assert r.status_code == 200, r.text
@@ -192,7 +192,7 @@ def created_job(session, tokens):
     assert job["extraction_status"] in ("done", "processing", "failed")
     yield job
     try:
-        session.delete(f"{API}/jobs/{job['id']}", headers=_hdr(tokens, "hr"), timeout=15)
+        session.delete(f"{API}/jobs/{job['id']}", headers=_hdr(tokens, "manager"), timeout=15)
     except Exception:
         pass
 
@@ -212,7 +212,7 @@ def test_create_job_short_jd_rejected(session, tokens):
     r = session.post(
         f"{API}/jobs",
         data={"title": "Too short", "department": "HR", "raw_jd_text": "x"},
-        headers=_hdr(tokens, "hr"),
+        headers=_hdr(tokens, "manager"),
         timeout=15,
     )
     assert r.status_code == 400
@@ -237,7 +237,7 @@ def test_get_job_detail(session, tokens, created_job):
 def test_reextract_job(session, tokens, created_job):
     r = session.post(
         f"{API}/jobs/{created_job['id']}/reextract",
-        headers=_hdr(tokens, "hr"),
+        headers=_hdr(tokens, "manager"),
         timeout=60,
     )
     assert r.status_code == 200
@@ -327,3 +327,24 @@ def test_invalid_decision(session, tokens):
         timeout=10,
     )
     assert r.status_code == 400
+
+
+def test_rescreen_all_candidates(session, tokens, created_job):
+    # 1. Deny for hr_recruiter
+    r = session.post(
+        f"{API}/jobs/{created_job['id']}/candidates/rescreen-all",
+        headers=_hdr(tokens, "hr"),
+        timeout=15,
+    )
+    assert r.status_code == 403
+
+    # 2. Allow for hiring_manager
+    r2 = session.post(
+        f"{API}/jobs/{created_job['id']}/candidates/rescreen-all",
+        headers=_hdr(tokens, "manager"),
+        timeout=15,
+    )
+    assert r2.status_code == 200
+    assert "queued" in r2.json()
+    assert r2.json()["queued"] >= 1
+

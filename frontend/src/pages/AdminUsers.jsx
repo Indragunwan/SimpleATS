@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Plus, UserPlus } from "lucide-react";
+import { Pencil, Plus, Trash2, UserPlus } from "lucide-react";
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -31,6 +32,17 @@ export default function AdminUsers() {
     load();
   };
 
+  const deleteUser = async (u) => {
+    if (!window.confirm(`Yakin ingin menghapus pengguna ${u.name}?`)) return;
+    try {
+      await api.delete(`/users/${u.id}`);
+      toast.success("Pengguna berhasil dihapus");
+      load();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal menghapus pengguna");
+    }
+  };
+
   return (
     <div className="p-10" data-testid="admin-users-page">
       <header className="mb-8 flex items-end justify-between">
@@ -39,7 +51,10 @@ export default function AdminUsers() {
           <p className="text-sm text-zinc-500 mt-1">Tambah dan kelola akun internal sistem.</p>
         </div>
         <Button
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            setEditingUser(null);
+            setOpen(true);
+          }}
           className="rounded-sm bg-zinc-900 hover:bg-zinc-800"
           data-testid="add-user-button"
         >
@@ -79,15 +94,34 @@ export default function AdminUsers() {
                     </span>
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <Button
-                      onClick={() => toggleActive(u)}
-                      size="sm"
-                      variant="outline"
-                      className="rounded-sm border-zinc-300 text-xs h-7"
-                      data-testid={`toggle-user-${u.id}`}
-                    >
-                      {u.is_active ? "Nonaktifkan" : "Aktifkan"}
-                    </Button>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        onClick={() => toggleActive(u)}
+                        size="sm"
+                        variant="outline"
+                        className="rounded-sm border-zinc-300 text-xs h-7 w-24"
+                        data-testid={`toggle-user-${u.id}`}
+                      >
+                        {u.is_active ? "Nonaktifkan" : "Aktifkan"}
+                      </Button>
+                      <button
+                        onClick={() => {
+                          setEditingUser(u);
+                          setOpen(true);
+                        }}
+                        className="text-zinc-400 hover:text-zinc-700 p-1"
+                        title="Edit User"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => deleteUser(u)}
+                        className="text-zinc-400 hover:text-rose-600 p-1"
+                        title="Hapus User"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -96,35 +130,55 @@ export default function AdminUsers() {
         </table>
       </div>
 
-      {open && <AddUserDialog onClose={() => setOpen(false)} onCreated={load} />}
+      {open && (
+        <UserFormDialog 
+          user={editingUser} 
+          onClose={() => {
+            setOpen(false);
+            setEditingUser(null);
+          }} 
+          onSaved={load} 
+        />
+      )}
     </div>
   );
 }
 
-function AddUserDialog({ onClose, onCreated }) {
+function UserFormDialog({ user, onClose, onSaved }) {
+  const isEdit = !!user;
   const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    role: "hr_recruiter",
+    name: user?.name || "",
+    email: user?.email || "",
+    password: "", // Optional during edit
+    role: user?.role || "hr_recruiter",
   });
 
   const submit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/users", form);
-      toast.success("Pengguna ditambahkan");
+      if (isEdit) {
+        const payload = { ...form };
+        if (!payload.password) delete payload.password; // Don't send empty password on edit
+        delete payload.email; // Usually shouldn't update email, but if we do, backend doesn't support changing email yet based on UserUpdate schema.
+        await api.patch(`/users/${user.id}`, payload);
+        toast.success("Pengguna diperbarui");
+      } else {
+        await api.post("/users", form);
+        toast.success("Pengguna ditambahkan");
+      }
       onClose();
-      onCreated();
+      onSaved();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Gagal menambah pengguna");
+      toast.error(err?.response?.data?.detail || `Gagal ${isEdit ? "memperbarui" : "menambah"} pengguna`);
     }
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-      <div className="bg-white border border-zinc-200 rounded-sm w-full max-w-md p-6" data-testid="add-user-dialog">
-        <h3 className="font-heading text-lg font-semibold tracking-tight mb-4">Tambah Pengguna</h3>
+      <div className="bg-white border border-zinc-200 rounded-sm w-full max-w-md p-6" data-testid="user-form-dialog">
+        <h3 className="font-heading text-lg font-semibold tracking-tight mb-4">
+          {isEdit ? "Edit Pengguna" : "Tambah Pengguna"}
+        </h3>
         <form onSubmit={submit} className="space-y-3">
           <div>
             <Label className="text-xs uppercase">Nama</Label>
@@ -133,7 +187,7 @@ function AddUserDialog({ onClose, onCreated }) {
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               required
               className="rounded-sm mt-1"
-              data-testid="new-user-name"
+              data-testid="user-name"
             />
           </div>
           <div>
@@ -143,20 +197,23 @@ function AddUserDialog({ onClose, onCreated }) {
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               required
-              className="rounded-sm mt-1 font-mono"
-              data-testid="new-user-email"
+              disabled={isEdit}
+              className="rounded-sm mt-1 font-mono disabled:opacity-50"
+              data-testid="user-email"
             />
           </div>
           <div>
-            <Label className="text-xs uppercase">Kata Sandi</Label>
+            <Label className="text-xs uppercase">
+              Kata Sandi {isEdit && <span className="normal-case text-zinc-400 font-normal">(kosongkan jika tidak ingin mengubah)</span>}
+            </Label>
             <Input
               type="password"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
-              required
+              required={!isEdit}
               minLength={6}
               className="rounded-sm mt-1"
-              data-testid="new-user-password"
+              data-testid="user-password"
             />
           </div>
           <div>

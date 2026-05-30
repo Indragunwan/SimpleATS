@@ -40,11 +40,19 @@ def _extract_json(text: str) -> Optional[dict]:
     return None
 
 
+class LLMResponse(str):
+    def __new__(cls, content, usage=None):
+        instance = super().__new__(cls, content)
+        instance.usage = usage or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        return instance
+
+
 async def call_llm(
     system_message: str,
     user_message: str,
     config: Optional[dict] = None,
     session_id: Optional[str] = None,
+    response_format: Optional[dict] = None,
 ) -> str:
     """Pluggable LLM caller.
 
@@ -59,7 +67,8 @@ async def call_llm(
         resp = llm_client(system_message, user_message, config)
         if hasattr(resp, "__await__"):
             resp = await resp
-        return resp if isinstance(resp, str) else str(resp)
+        content = resp if isinstance(resp, str) else str(resp)
+        return LLMResponse(content)
 
     # Fallback to default LLM client
     provider_type = config.get("provider_type", "emergent")
@@ -107,18 +116,36 @@ async def call_llm(
         "max_tokens": config.get("max_tokens", 4000)
     }
     
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(url, headers=headers, json=payload)
-        resp.raise_for_status()
+    if response_format:
+        payload["response_format"] = response_format
+        
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        try:
+            resp = await client.post(url, headers=headers, json=payload)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if response_format and e.response.status_code in (400, 422):
+                logger.warning(f"LLM call failed with response_format, retrying without it: {e}")
+                payload_fallback = payload.copy()
+                payload_fallback.pop("response_format", None)
+                resp = await client.post(url, headers=headers, json=payload_fallback)
+                resp.raise_for_status()
+            else:
+                raise e
         data = resp.json()
         
+    usage = {}
+    if isinstance(data, dict):
+        usage = data.get("usage", {})
+        
     try:
-        return data["choices"][0]["message"]["content"]
+        content = data["choices"][0]["message"]["content"]
+        return LLMResponse(content, usage)
     except Exception:
         pass
     if isinstance(data, dict) and "text" in data:
-        return data["text"]
-    return json.dumps(data, ensure_ascii=False)
+        return LLMResponse(data["text"], usage)
+    return LLMResponse(json.dumps(data, ensure_ascii=False), usage)
 
 
 # ============ JD EXTRACTION ============
@@ -172,14 +199,20 @@ Output WAJIB JSON valid (tanpa teks lain, tanpa markdown):
   "name": "Nama lengkap kandidat",
   "email": "email@example.com",
   "phone": "+62...",
+  "gender": "laki-laki | perempuan (Tentukan secara akurat berdasarkan nama lengkap, sapaan Bp/Ibu, foto/deskripsi diri, atau informasi gender eksplisit di CV. Contoh: Syaiful / Nasrullah = laki-laki)",
+  "birth_date": "Tanggal lahir kandidat format YYYY-MM-DD (Ekstrak dari tempat/tanggal lahir kandidat, misal lahir 12 April 1990 -> 1990-04-12. Jika hanya ada tahun lahir atau umur, perkirakan tanggalnya)",
+  "address": "Alamat lengkap tempat tinggal kandidat, kosong jika tidak ditemukan",
   "summary": "Ringkasan profil 1-2 kalimat",
-  "years_of_experience": <integer, total tahun pengalaman kerja>,
+  "years_of_experience": <integer, total tahun pengalaman kerja. PENTING: Hitung secara akurat berdasarkan selisih tahun dari pekerjaan PERTAMA kali dimulai hingga pekerjaan TERAKHIR atau hari ini (jika berstatus 'Sekarang' / 'Present'). KETENTUAN HARI INI: Gunakan TAHUN 2026 sebagai tahun sekarang. Contoh: jika bekerja pertama kali Juli 2009 sampai Sekarang (2026), maka lama pengalamannya adalah 2026 - 2009 = 17 tahun!>,
   "work_history": [
     {"position": "Jabatan", "company": "Perusahaan", "duration": "Jan 2020 - Des 2023", "achievements": ["Pencapaian 1", "Pencapaian 2"]}
   ],
   "education": [{"degree": "S1 Teknik Informatika", "institution": "Universitas X", "year": "2018"}],
   "skills": ["Skill 1", "Skill 2"],
+  "hard_skills": ["Ms. Word", "Ms. Excel", "Ms. PowerPoint", "AI", "Autocad", "Python", "React", "Keahlian teknis/alat lainnya"],
+  "soft_skills": ["HR Administration", "Budgeting", "Pengelolaan asset", "Communication", "Teamwork", "Keahlian non-teknis/interpersonal/manajerial lainnya"],
   "certifications": ["Sertifikasi 1"],
+  "achievements": ["Pencapaian luar biasa 1", "Penghargaan/Achievement global lainnya"],
   "languages": ["Indonesia (Native)", "English (Professional)"]
 }
 Jika data tidak ada, gunakan string kosong atau array kosong. Jangan hallucinate."""
@@ -192,17 +225,25 @@ async def parse_cv(cv_text: str, config: Optional[dict] = None) -> dict:
     user_msg = f"Parse CV berikut:\n\n---\n{cleaned_text[:8000]}\n---\n\nKembalikan JSON saja."
     raw = await call_llm(CV_SYSTEM_PROMPT, user_msg, config)
     parsed = _extract_json(raw) or {}
+    usage = getattr(raw, "usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
     return {
         "name": parsed.get("name", "") or "Unknown",
         "email": parsed.get("email", "") or "",
         "phone": parsed.get("phone", "") or "",
         "summary": parsed.get("summary", "") or "",
         "years_of_experience": int(parsed.get("years_of_experience", 0) or 0),
+        "gender": parsed.get("gender", "") or "",
+        "birth_date": parsed.get("birth_date", "") or "",
+        "address": parsed.get("address", "") or "",
         "work_history": parsed.get("work_history", []) or [],
         "education": parsed.get("education", []) or [],
         "skills": parsed.get("skills", []) or [],
+        "hard_skills": parsed.get("hard_skills", []) or [],
+        "soft_skills": parsed.get("soft_skills", []) or [],
         "certifications": parsed.get("certifications", []) or [],
+        "achievements": parsed.get("achievements", []) or [],
         "languages": parsed.get("languages", []) or [],
+        "_usage": usage,
     }
 
 
@@ -280,6 +321,7 @@ async def evaluate_match(
     )
     raw = await call_llm(SCORING_SYSTEM_PROMPT, user_msg, config)
     parsed = _extract_json(raw) or {}
+    usage = getattr(raw, "usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
 
     def _dim(key: str) -> dict:
         d = parsed.get(key, {}) or {}
@@ -303,6 +345,7 @@ async def evaluate_match(
         "rationale_summary": parsed.get("rationale_summary", "") or "",
         "strengths": parsed.get("strengths", []) or [],
         "gaps_summary": parsed.get("gaps_summary", []) or [],
+        "_usage": usage,
     }
 
 
@@ -326,3 +369,63 @@ def recommendation_from_score(score: int, weights: dict) -> str:
     if score < reject:
         return "reject"
     return "review"
+
+
+async def generate_embedding(text: str, config: Optional[dict] = None) -> list[float]:
+    """Generate vector embedding for a given text using the configured AI provider."""
+    config = config or {}
+    api_key = config.get("api_key") or os.environ.get("NVIDIA_API_KEY") or os.environ.get("SUMOPOD_API_KEY") or EMERGENT_KEY
+    base_url = config.get("base_url") or os.environ.get("SUMOPOD_BASE_URL") or "https://ai.sumopod.com"
+    provider_type = config.get("provider_type", "emergent")
+
+    import httpx
+    url = f"{base_url.rstrip('/')}/embeddings"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    # Model selection
+    model_name = "text-embedding-3-small"
+    if "nvidia" in base_url.lower():
+        model_name = "nvidia/embeddings-nv-embed-qa-4"
+
+    payload = {
+        "model": model_name,
+        "input": text[:8000] # truncate to stay within token limits
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["data"][0]["embedding"]
+    except Exception as e:
+        logger.warning(f"Failed to generate embedding with config {base_url}: {e}. Attempting fallback to sumopod config...")
+        try:
+            from server import async_session
+            from models import DBAIProviderConfig
+            from sqlalchemy import select
+            async with async_session() as db_session:
+                stmt = select(DBAIProviderConfig).where(DBAIProviderConfig.name == "sumopod")
+                res = await db_session.execute(stmt)
+                sumopod_cfg = res.scalar_one_or_none()
+                if sumopod_cfg and sumopod_cfg.api_key:
+                    fallback_url = f"{sumopod_cfg.base_url.rstrip('/')}/embeddings"
+                    fallback_headers = {
+                        "Authorization": f"Bearer {sumopod_cfg.api_key}",
+                        "Content-Type": "application/json"
+                    }
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        resp = await client.post(fallback_url, headers=fallback_headers, json=payload)
+                        resp.raise_for_status()
+                        data = resp.json()
+                        logger.info("Successfully generated embedding using sumopod fallback config.")
+                        return data["data"][0]["embedding"]
+        except Exception as fallback_err:
+            logger.error(f"Fallback to sumopod also failed: {fallback_err}")
+            
+        logger.error(f"Error generating embedding: {e}")
+        # Return a zero vector of size 1536 as fallback if API call fails
+        return [0.0] * 1536

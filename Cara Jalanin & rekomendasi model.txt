@@ -1,0 +1,208 @@
+Cara Jalanin
+fe_oa_fac3a83cec9e854fa74134f9c2268a10f7dc5407f14251d9
+
+sumopod
+sk-5sd5ogL0QJ451Cd7RvuY2w
+
+Backend
+ .\.venv\Scripts\Activate.ps1
+python server.py
+
+Frontend
+npm start
+____
+Berikut adalah penjelasan yang jauh lebih sederhana, santai, dan **bebas dari istilah teknis/rumus matematika**, khusus dirancang agar mudah dipahami oleh rekan-rekan **Human Resources (HR)**:
+
+---
+
+# Cara AI Menilai CV Kandidat Anda (Panduan Mudah untuk HR)
+
+Bayangkan AI di sistem ini bekerja seperti **Asisten HR Pintar** Anda. Ketika Anda memasukkan kriteria dan mengatur bobot, Anda sedang memberikan instruksi kerja kepada asisten ini. 
+
+Proses penilaian dibagi menjadi **2 Langkah Sederhana**:
+
+---
+
+### **Langkah 1: Asisten AI Membaca CV & Memberikan Nilai Rapor**
+Pertama-tama, Asisten AI akan membaca CV kandidat dan mencocokkannya dengan kriteria yang Anda buat (seperti syarat keahlian, lokasi tinggal, dll). AI akan memberikan **Nilai Rapor (skala 0 sampai 100)** untuk kategori berikut:
+* Rapor Pengalaman Kerja
+* Rapor Kriteria Wajib (*Must-Have*)
+* Rapor Kriteria Pendukung (*Nice-to-Have*)
+* Rapor Pendidikan & Jurusan
+* Rapor Relevansi Industri (*Domain*)
+
+#### **Apa pengaruh "Bobot 1 sampai 5" di Kriteria Individu?**
+Saat Anda membuat kriteria dan memilih tingkat kepentingannya (Skala 1 - 5), Anda sedang memberi tahu Asisten AI seberapa **kecewa** Anda jika kandidat tidak punya keahlian tersebut:
+* **Krusial (Bobot 5)**: *“Ini wajib punya! Kalau tidak punya, saya akan sangat kecewa dan nilai rapor kategori ini harus dikurangi banyak!”* (Misal: Syarat wajib sertifikasi profesi).
+* **Normal (Bobot 3)**: *“Ini kriteria standar. Kalau tidak ada, nilainya dikurangi secukupnya.”*
+* **Ringan (Bobot 1)**: *“Ini cuma nilai plus saja. Kalau tidak punya, tidak apa-apa, nilai hanya dikurangi sedikit sekali.”*
+
+---
+
+### **Langkah 2: Sistem Menghitung Nilai Kelulusan Akhir (Kendali di Tangan Anda)**
+Setelah Asisten AI selesai membuat rapor nilai untuk kandidat, **Sistem ATS** akan menghitung **Nilai Akhir Kelulusan** berdasarkan **Persentase (%)** yang Anda atur di panel kanan (Konfigurasi Lowongan).
+
+Persentase (%) ini menentukan seberapa besar Anda memprioritaskan kategori rapor tersebut untuk menentukan kelulusan kandidat:
+* **Bobot Pengalaman ($40\%$)**: Berarti Anda sangat mementingkan kecocokan lamanya pengalaman kerja.
+* **Bobot Kriteria Wajib ($40\%$)**: Berarti Anda sangat mementingkan poin-poin syarat mutlak yang Anda buat.
+* **Bobot Kriteria Pendukung ($10\%$)** & **Pendidikan ($10\%$)**: Porsinya lebih kecil karena hanya sebagai pelengkap.
+
+Sistem akan menggabungkan semua nilai rapor di Langkah 1 sesuai porsi persentase yang Anda atur di atas untuk menghasilkan satu **Skor Akhir (0-100)**.
+
+---
+
+### **Analogi Sederhana (Joni Si Pelamar):**
+Misalkan Anda mengatur lowongan dengan porsi: **Syarat Wajib ($50\%$)** dan **Pengalaman ($50\%$)**. Pendidikan dan industri diabaikan ($0\%$).
+
+Ada pelamar bernama **Joni**:
+* Joni punya **Pengalaman luar biasa** $\rightarrow$ Rapor Pengalamannya dapat nilai **100** dari AI.
+* Tapi, Joni **gagal di satu kriteria Krusial (Bobot 5)** pada syarat wajib $\rightarrow$ Rapor Syarat Wajibnya anjlok dapet nilai **50** dari AI.
+
+**Nilai Kelulusan Akhir Joni:**
+Karena Anda membagi porsinya adil $50:50$ antara Pengalaman dan Syarat Wajib, maka Nilai Akhir Joni adalah gabungan setengah nilai rapor pengalamannya ($50$ poin) ditambah setengah nilai rapor syarat wajibnya ($25$ poin). 
+* **Nilai Akhir Joni = $75$**
+
+Jika batas kelulusan otomatis (*Threshold Shortlist*) Anda adalah **76**, maka Joni tidak langsung lulus otomatis ke tahap berikutnya dan statusnya menjadi **Review** (membutuhkan keputusan manual Anda untuk meloloskan Joni atau tidak).
+____
+Untuk memberikan penjelasan yang sangat mudah dipahami oleh pengguna (rekruter/HR), berikut adalah panduan alur perhitungan nilai kandidat dan bagaimana **Bobot Konfigurasi Lowongan (Global)** bekerja sama dengan **Bobot Kriteria Individu (Must-Have / Nice-to-Have)**.
+
+---
+# Panduan Perhitungan Skor: Konfigurasi Lowongan vs Kriteria Individu
+
+Sistem ATS ini menggunakan metode **Penilaian Bertingkat (Hierarchical Weighting)** yang memadukan keahlian semantik AI dengan kendali penuh dari rekruter. Perhitungannya dibagi menjadi dua tahap utama:
+
+```mermaid
+graph TD
+    A[CV Mentah Kandidat] -->|Tahap 1: Evaluasi Semantik AI| B(Skor 5 Dimensi Penilaian)
+    subgraph Kriteria Individu
+        B1[Must-Have: Kriteria 1-5] --> B
+        B2[Nice-to-Have: Kriteria 1-5] --> B
+    end
+    B -->|Tahap 2: Pembobotan Global Rekruter| C(Skor Total Akhir 0-100)
+    subgraph Konfigurasi Lowongan
+        C1[Bobot Pengalaman %] --> C
+        C2[Bobot Wajib %] --> C
+        C3[Bobot Pendidikan %] --> C
+        C4[Bobot Domain %] --> C
+        C5[Bobot Pendukung %] --> C
+    end
+```
+
+---
+
+## Tahap 1: Penentuan Skor Dimensi (Evaluasi Semantik AI)
+Pada tahap pertama, AI membaca CV kandidat dan menilainya ke dalam **5 Dimensi Penilaian** (Skor 0-100 pada masing-masing dimensi). Di sinilah **Bobot Kriteria Individu (skala 1-5)** yang Anda input saat membuat kriteria bekerja:
+
+1. **Bagaimana AI Menilai?**
+   AI mengevaluasi seberapa cocok kandidat dengan setiap poin kriteria yang Anda buat (misalnya keahlian teknis, sertifikasi, atau kota tinggal).
+2. **Peran Bobot Kriteria (Skala 1 - 5):**
+   * **Krusial (Bobot 5)**: Kriteria ini sangat penting. Jika kandidat **tidak memenuhi** kriteria berbobot 5 ini, AI akan **memotong sub-skor dimensi tersebut secara signifikan** (pengurangan nilai sangat besar).
+   * **Normal (Bobot 3)**: Poin kriteria standar. Pengurangan nilai sedang jika tidak terpenuhi.
+   * **Ringan (Bobot 1)**: Nilai tambah ringan. Jika tidak dipenuhi, nilai kandidat hanya berkurang sedikit sekali.
+
+*Hasil dari Tahap 1 ini adalah kandidat mendapatkan **5 Sub-Skor Dimensi** yang masing-masing bernilai maksimal 100.*
+
+---
+
+## Tahap 2: Perhitungan Skor Akhir (Pembobotan Global Rekruter)
+Setelah kandidat mendapatkan sub-skor dari AI, sistem akan menghitung **Skor Total Akhir (0-100)** menggunakan **Bobot Konfigurasi Lowongan (%)** yang Anda atur secara manual di panel kanan detail lowongan.
+
+Di sinilah Anda sebagai rekruter memegang kendali penuh. Keempat bobot dimensi global ini **wajib berjumlah total 100%**:
+1. **Bobot Pengalaman (%)** $\rightarrow$ Menentukan seberapa besar pengaruh kesesuaian durasi kerja kandidat terhadap skor total.
+2. **Bobot Kriteria Wajib (%)** $\rightarrow$ Menentukan seberapa besar pengaruh pemenuhan poin-poin kriteria *Must-Have* terhadap skor total.
+3. **Bobot Kriteria Pendukung (%)** $\rightarrow$ Menentukan porsi pengaruh kriteria opsional (*Nice-to-Have*).
+4. **Bobot Pendidikan (%)** & **Bobot Domain (%)** $\rightarrow$ Menentukan pengaruh latar belakang akademis dan kesesuaian industri asal pelamar.
+
+### **Rumus Matematika Skor Akhir:**
+$$\text{Skor Akhir} = \frac{(\text{Skor Pengalaman} \times \text{Bobot Pengalaman \%}) + (\text{Skor Wajib} \times \text{Bobot Wajib \%}) + (\text{Skor Pendukung} \times \text{Bobot Pendukung \%}) + (\text{Skor Pendidikan} \times \text{Bobot Pendidikan \%}) + (\text{Skor Domain} \times \text{Bobot Domain \%})}{100}$$
+
+---
+
+### **Contoh Simulasi Kasus Nyata:**
+
+Misalkan Anda membuka lowongan **HSE Supervisor** dengan konfigurasi bobot lowongan:
+* **Bobot Pengalaman**: $40\%$
+* **Bobot Kriteria Wajib**: $40\%$
+* **Bobot Pendidikan**: $10\%$
+* **Bobot Domain**: $10\%$
+*(Total: $100\%$)*
+
+Lalu seorang kandidat bernama **Joni** discreening oleh AI dengan hasil Tahap 1:
+* **Skor Pengalaman Joni**: $90$ (karena pengalamannya sangat lama dan relevan)
+* **Skor Kriteria Wajib Joni**: $50$ (karena Joni gagal memenuhi satu kriteria kualifikasi yang Anda beri **Bobot 5 / Krusial**, sehingga nilainya langsung terpangkas banyak oleh AI)
+* **Skor Pendidikan Joni**: $80$ (karena jurusan kuliah Joni sesuai)
+* **Skor Domain Joni**: $80$ (karena Joni berasal dari industri sejenis)
+
+**Perhitungan Skor Akhir Joni:**
+$$\text{Skor Akhir} = \frac{(90 \times 40) + (50 \times 40) + (80 \times 10) + (80 \times 10)}{100}$$
+$$\text{Skor Akhir} = \frac{3600 + 2000 + 800 + 800}{100}$$
+$$\text{Skor Akhir} = \frac{7200}{100} = \mathbf{72}$$
+
+Skor total Joni adalah **72**. Jika Threshold Shortlist Anda adalah **75**, Joni akan masuk ke kategori **Review (Perlu Diulas)** karena nilainya sedikit di bawah batas aman kelulusan otomatis (*Shortlist*).
+
+---
+
+### **Rangkuman Ringkas untuk Pengguna:**
+* **Bobot Kriteria (1-5)**: Digunakan oleh **AI** untuk menentukan seberapa kejam pengurangan nilai jika kandidat gagal memenuhi syarat kriteria individu tersebut.
+* **Bobot Konfigurasi (Persentase %)**: Digunakan oleh **Sistem** untuk mengalikan sub-skor dimensi tersebut sesuai tingkat kepentingan global yang ditentukan rekruter guna merumuskan satu Skor Akhir penentu kelayakan kelulusan.
+_________________________________
+rekomendasi penggunaan model AI untuk aplikasi Sistem Penapisan CV (SimpleATS) Anda:
+
+1. Model AI Terbaik yang Dipakai (Flagship Class)
+Rekomendasi: gpt-4o atau gemini/gemini-2.5-pro (dan gpt-5 jika didukung oleh akun penyedia Anda).
+Penjelasan: Model-model kelas flagship ini memiliki kapasitas penalaran (reasoning) dan pemahaman kontekstual tertinggi. Sangat unggul dalam melakukan evaluasi kriteria wajib (Must-Have) yang kompleks secara semantik, serta meminimalkan risiko salah tafsir (hallucination) saat mencocokkan keterampilan kandidat dengan deskripsi pekerjaan.
+2. Model AI Terbaik yang Dipakai + Ada Diskonnya (Kolom ke-2)
+Berdasarkan daftar diskon aktif di kolom kedua berkas Excel Anda:
+
+Rekomendasi: deepseek-v4-pro (Diskon 75% Off) atau mimo-v2.5-pro (Diskon 70% Off).
+Alternatif Biaya Murah: kimi-k2.6 (Diskon 90% Off) atau glm-5.1 (Diskon 90% Off).
+Penjelasan:
+deepseek-v4-pro dan mimo-v2.5-pro adalah model kelas pro yang dioptimalkan untuk performa tinggi dengan struktur data JSON. Dengan potongan harga $70% - 75%$, Anda mendapatkan performa setara model flagship dengan harga yang jauh lebih murah.
+kimi-k2.6 dengan diskon $90%$ memberikan penghematan biaya operasional bulanan yang sangat ekstrem untuk volume unggahan CV skala besar.
+3. Model AI yang Seimbang, Cepat, & Sesuai Aplikasi Ini (Balanced & Fast)
+Rekomendasi: gpt-4o-mini atau gemini/gemini-2.5-flash (termasuk gemini-2.0-flash).
+Penjelasan:
+Aplikasi penapisan CV memproses teks dokumen dalam volume besar secara paralel di latar belakang. Latensi (kecepatan) dan efisiensi biaya adalah faktor krusial.
+gpt-4o-mini (yang merupakan model bawaan/default di sistem Anda saat ini) dan gemini/gemini-2.5-flash menawarkan kecepatan pemrosesan super cepat (hanya dalam $1 - 3$ detik), biaya token yang sangat rendah, serta kemampuan pemrosesan format JSON terstruktur yang andal untuk parsing dan skoring.
+
+____________________-
+Apa Fungsi Fitur "Saran dari Pool"?
+Fitur ini adalah fitur Sourcing / Pendayagunaan Kembali (Reuse) Kandidat Lama dari lowongan lain.
+
+Bukan untuk Screening Ulang: Tombol "Screening Ulang" (ikon putar) di tabel digunakan untuk memproses kembali kandidat yang memang sudah ada di lowongan aktif saat ini (misalnya setelah Anda mengubah bobot kriteria atau jika proses sebelumnya gagal).
+Melainkan untuk Sourcing Global: Fitur "Saran dari Pool" digunakan untuk menarik kandidat lama yang pernah diunggah di lowongan-lowongan lain di masa lalu (atau tersimpan di database global Talent Pool) untuk dicocokkan dengan kriteria lowongan yang baru ini, tanpa perlu mengunggah ulang file PDF CV mereka!
+Skenario Contoh Penggunaan:
+Bulan lalu, Anda membuka lowongan "General Affair Staff" dan mengunggah 20 CV. Sebanyak 19 kandidat tidak terpilih untuk posisi tersebut, namun CV mereka sudah bersih ter-parsing oleh AI ke dalam database global (Talent Pool).
+Hari ini, Anda membuka lowongan baru "HSE Supervisor".
+Alih-alih mencari file PDF 19 kandidat GA bulan lalu di komputer Anda dan mengunggahnya kembali, Anda cukup klik tombol "Saran dari Pool" di lowongan HSE baru ini.
+Sistem akan otomatis memunculkan 19 kandidat GA tersebut. Anda tinggal mencentang nama mereka, lalu klik "Screening Kandidat".
+AI akan langsung mengevaluasi kecocokan mereka terhadap kriteria lowongan baru secara instan dan menghemat biaya token karena teks CV tidak perlu diekstrak ulang dari nol!
+Kesimpulan:
+Fitur ini sangat berguna untuk membangun database kandidat internal perusahaan Anda sendiri (Talent Asset), sehingga Anda bisa melakukan sourcing kilat dari pelamar-pelamar terdahulu setiap kali ada lowongan baru dibuka. 
+____________________-
+Rekomendasi spesifikasi server untuk menjalankan aplikasi SimpleATS secara online sangat bergantung pada arsitektur AI yang digunakan.
+
+Karena aplikasi ini menggunakan External Cloud API (seperti OpenAI, Gemini, Nvidia NIM, atau API Sumopod) untuk melakukan inferensi AI (parsing CV, pencocokan kriteria, kalkulasi skor), server Anda tidak memerlukan GPU (Graphics Processing Unit) sama sekali. Beban komputasi AI yang berat didelegasikan sepenuhnya ke server penyedia AI cloud tersebut.
+
+Berikut adalah rincian rekomendasi spesifikasi server minimum dan ideal agar aplikasi ini berjalan dengan lancar (smooth):
+
+1. Spesifikasi Server (VPS / Cloud Instance)
+Komponen	Spesifikasi Minimum (Cocok untuk Uji Coba / Tim Kecil)	Spesifikasi Rekomendasi (Cocok untuk Produksi / Banyak Pengguna)	Rationale (Alasan Teknis)
+VCPU (CPU)	1 Core	2 Cores	FastAPI (backend) dan penguraian dokumen (parsing file PDF/Word ke teks) bersifat intensif CPU sementara saat proses upload CV massal. 2 Cores akan mencegah lag saat banyak user mengakses bersamaan.
+RAM	2 GB	4 GB	Sistem operasi Linux + MySQL database + FastAPI Backend memakan memori sekitar 1.2–1.8 GB. Dengan RAM 4 GB, memori server akan memiliki ruang lega (buffer) yang sangat aman.
+GPU	0 GB (Tidak Butuh GPU)	0 GB (Tidak Butuh GPU)	Karena semua pemrosesan bahasa alami (LLM) dialihkan menggunakan panggilan API online (HTTPS).
+Penyimpanan (Storage)	20 GB SSD	40 GB - 80 GB SSD	Ruang dibutuhkan untuk OS, database metadata kandidat, dan folder penyimpanan dokumen CV asli yang diunggah. Tipe SSD sangat wajib agar proses baca-tulis database cepat.
+Koneksi Internet / Bandwidth	100 Mbps (Limit kuota 1 TB/bln)	1 Gbps (Unlimited / Limit tinggi)	Dibutuhkan untuk transfer file CV saat diunggah oleh pengguna dan komunikasi cepat dengan Cloud API AI.
+2. Rekomendasi Layanan Hosting (Penyedia Cloud)
+Anda dapat menyewa VPS murah dari beberapa provider cloud terpercaya berikut:
+
+DigitalOcean / Linode / Vultr:
+Paket $12 - $24/bulan (2 Cores CPU, 2GB - 4GB RAM, 50GB-80GB SSD).
+AWS (Amazon Web Services):
+Tipe instance t3.medium (2 vCPU, 4 GB RAM) atau t3a.medium (opsi AMD yang lebih murah).
+Penyedia Lokal (Biznet GIO, Niagahoster, DomaiNesia, dll.):
+Cari paket VPS Linux (Ubuntu Server 20.04/22.04 LTS) dengan spesifikasi 2 Cores CPU & 4 GB RAM.
+3. Tips Tambahan untuk Optimasi Deploy Online
+Pemisahan Database (Opsional): Jika aplikasi digunakan secara enterprise dengan puluhan ribu kandidat, pertimbangkan menggunakan database terpisah (misalnya AWS RDS) agar performa server aplikasi utama tidak terganggu oleh transaksi database MySQL.
+Gunakan Reverse Proxy: Di depan aplikasi React & FastAPI, gunakan Nginx sebagai web server / reverse proxy untuk menyajikan file statis frontend React dan mengarahkan API request ke FastAPI. Nginx sangat ringan dan mempercepat waktu pemuatan halaman.
+Proses Background: Karena parsing CV dilakukan secara asinkronus menggunakan background_tasks bawaan FastAPI, CPU 2 Cores sudah cukup aman untuk menangani antrean proses tanpa memblokir request pengguna lain di web.

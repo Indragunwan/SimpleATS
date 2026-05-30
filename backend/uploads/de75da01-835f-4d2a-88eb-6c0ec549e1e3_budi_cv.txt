@@ -1,0 +1,6 @@
+Nama: Budi Santoso
+Email: budi.santoso@example.com
+Telepon: 081234567890
+Pendidikan: S1 Akuntansi, Universitas Indonesia, 2017.
+Pengalaman: 5 tahun sebagai Payroll Specialist di PT ABC (2018-2023). Memproses payroll 500+ karyawan, menghitung PPh21, BPJS, dan SPT masa. Mahir Excel dan sistem Talenta HR.
+Skills: Payroll processing, PPh21, BPJS, Excel, Talenta, SAP HR.

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,13 +15,15 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, FileText, Users, Trash2 } from "lucide-react";
+import { Plus, FileText, Users, Trash2, Pencil, Lock } from "lucide-react";
 
 export default function Jobs() {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState(null); // job object to edit
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const load = async () => {
     setLoading(true);
@@ -45,7 +48,9 @@ export default function Jobs() {
             Kelola Job Description dan lihat ranking kandidat per posisi.
           </p>
         </div>
-        <CreateJobDialog open={open} setOpen={setOpen} onCreated={load} />
+        {user?.role !== "hr_recruiter" && (
+          <CreateJobDialog open={open} setOpen={setOpen} onCreated={load} />
+        )}
       </header>
 
       <div className="bg-white border border-zinc-200 rounded-sm overflow-hidden" data-testid="jobs-table-wrapper">
@@ -96,6 +101,14 @@ export default function Jobs() {
                     {j.target_position && j.target_position !== j.title && (
                       <div className="text-xs text-zinc-500 mt-0.5">{j.target_position}</div>
                     )}
+                    <div className="flex items-center gap-2.5 text-[10px] text-zinc-400 mt-1.5 flex-wrap">
+                      {j.location && (
+                        <span className="bg-zinc-100 text-zinc-700 px-1.5 py-0.5 rounded-sm font-semibold">📍 {j.location}</span>
+                      )}
+                      {(j.start_date || j.end_date) && (
+                        <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded-sm font-semibold">📅 {j.start_date || "—"} s/d {j.end_date || "—"}</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex gap-3 text-xs">
@@ -117,23 +130,42 @@ export default function Jobs() {
                     <StatusBadge status={j.status} extraction={j.extraction_status} />
                   </td>
                   <td className="px-5 py-4 text-right">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (window.confirm("Yakin ingin menghapus lowongan ini?")) {
-                          api.delete(`/jobs/${j.id}`).then(() => {
-                            toast.success("Lowongan berhasil dihapus");
-                            load();
-                          }).catch((err) => {
-                            toast.error(err?.response?.data?.detail || "Gagal menghapus lowongan");
-                          });
-                        }
-                      }}
-                      className="text-zinc-400 hover:text-rose-600 p-1"
-                      title="Hapus Lowongan"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      {/* Edit button — hidden for hr_recruiter */}
+                      {user?.role !== "hr_recruiter" && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingJob(j);
+                          }}
+                          className="text-zinc-400 hover:text-zinc-700 p-1 transition-colors"
+                          title="Edit Lowongan"
+                          data-testid={`edit-job-${j.id}`}
+                        >
+                          <Pencil size={15} />
+                        </button>
+                      )}
+                      {/* Delete button — hidden for closed jobs and hr_recruiter */}
+                      {j.status !== "closed" && user?.role !== "hr_recruiter" && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm("Yakin ingin menghapus lowongan ini?")) {
+                              api.delete(`/jobs/${j.id}`).then(() => {
+                                toast.success("Lowongan berhasil dihapus");
+                                load();
+                              }).catch((err) => {
+                                toast.error(err?.response?.data?.detail || "Gagal menghapus lowongan");
+                              });
+                            }
+                          }}
+                          className="text-zinc-400 hover:text-rose-600 p-1 transition-colors"
+                          title="Hapus Lowongan"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -141,10 +173,20 @@ export default function Jobs() {
           </tbody>
         </table>
       </div>
+
+      {/* Edit Job Dialog */}
+      {editingJob && (
+        <EditJobDialog
+          job={editingJob}
+          onClose={() => setEditingJob(null)}
+          onSaved={() => { setEditingJob(null); load(); }}
+        />
+      )}
     </div>
   );
 }
 
+// ─── Status Badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status, extraction }) {
   if (extraction === "processing") {
     return (
@@ -169,10 +211,15 @@ function StatusBadge({ status, extraction }) {
   return <span className={`text-xs px-2 py-1 rounded-sm border font-medium ${cls}`}>{status}</span>;
 }
 
+// ─── Create Job Dialog ────────────────────────────────────────────────────────
 function CreateJobDialog({ open, setOpen, onCreated }) {
   const [title, setTitle] = useState("");
+  const [targetPosition, setTargetPosition] = useState("");
   const [rawJd, setRawJd] = useState("");
   const [rawSpec, setRawSpec] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [location, setLocation] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -189,17 +236,25 @@ function CreateJobDialog({ open, setOpen, onCreated }) {
     try {
       const fd = new FormData();
       fd.append("title", title);
+      fd.append("target_position", targetPosition);
       fd.append("raw_jd_text", rawJd);
       fd.append("raw_spec_text", rawSpec);
+      if (startDate) fd.append("start_date", startDate);
+      if (endDate) fd.append("end_date", endDate);
+      if (location) fd.append("location", location);
 
-      const { data } = await api.post("/jobs", fd, {
+      await api.post("/jobs", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       toast.success("Lowongan dibuat. Ekstraksi kriteria selesai.");
       setOpen(false);
       setTitle("");
+      setTargetPosition("");
       setRawJd("");
       setRawSpec("");
+      setStartDate("");
+      setEndDate("");
+      setLocation("");
       onCreated();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Gagal membuat lowongan");
@@ -221,7 +276,7 @@ function CreateJobDialog({ open, setOpen, onCreated }) {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label className="text-xs uppercase tracking-wider text-zinc-600">Judul</Label>
+            <Label className="text-xs uppercase tracking-wider text-zinc-600">Judul Posisi</Label>
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -229,6 +284,57 @@ function CreateJobDialog({ open, setOpen, onCreated }) {
               data-testid="create-job-title"
               className="mt-1 rounded-sm"
             />
+          </div>
+          <div>
+            <Label className="text-xs uppercase tracking-wider text-zinc-600">
+              Tanggung Jawab Utama
+              <span className="ml-1 normal-case text-zinc-400 font-normal">(opsional)</span>
+            </Label>
+            <Input
+              value={targetPosition}
+              onChange={(e) => setTargetPosition(e.target.value)}
+              placeholder="Contoh: Mengelola proses penggajian bulanan..."
+              data-testid="create-job-target-position"
+              className="mt-1 rounded-sm"
+            />
+            <p className="text-[10px] text-zinc-400 mt-1">
+              Akan tampil di bawah judul pada halaman detail lowongan. Jika dikosongkan, akan diisi otomatis dari JD.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-zinc-600">
+                Lokasi Penempatan
+                <span className="ml-1 normal-case text-zinc-400 font-normal">(opsional)</span>
+              </Label>
+              <Input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Kota atau Nama Unit"
+                className="mt-1 rounded-sm text-xs"
+              />
+            </div>
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-zinc-600">
+                Periode Lowongan Aktif
+                <span className="ml-1 normal-case text-zinc-400 font-normal">(opsional)</span>
+              </Label>
+              <div className="flex gap-1.5 items-center mt-1">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="flex h-9 w-full rounded-sm border border-zinc-200 bg-transparent px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950"
+                />
+                <span className="text-xs text-zinc-400 font-mono">s/d</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="flex h-9 w-full rounded-sm border border-zinc-200 bg-transparent px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950"
+                />
+              </div>
+            </div>
           </div>
           <div>
             <Label className="text-xs uppercase tracking-wider text-zinc-600">Teks JD / Tanggung Jawab</Label>
@@ -260,6 +366,178 @@ function CreateJobDialog({ open, setOpen, onCreated }) {
               data-testid="create-job-submit"
             >
               {submitting ? "Memproses..." : "Buat & Ekstrak Kriteria"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Edit Job Dialog ──────────────────────────────────────────────────────────
+function EditJobDialog({ job, onClose, onSaved }) {
+  const [title, setTitle] = useState(job.title || "");
+  const [targetPosition, setTargetPosition] = useState(job.target_position || "");
+  const [location, setLocation] = useState(job.location || "");
+  const [startDate, setStartDate] = useState(job.start_date || "");
+  const [endDate, setEndDate] = useState(job.end_date || "");
+  const [status, setStatus] = useState(job.status || "active");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      toast.error("Judul harus diisi");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const payload = {
+        title: title.trim(),
+        target_position: targetPosition.trim() || null,
+        location: location.trim() || null,
+        start_date: startDate || null,
+        end_date: endDate || null,
+        status,
+      };
+      await api.patch(`/jobs/${job.id}`, payload);
+      toast.success("Lowongan berhasil diperbarui");
+      onSaved();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal memperbarui lowongan");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="rounded-sm sm:max-w-lg" data-testid="edit-job-dialog">
+        <DialogHeader>
+          <DialogTitle className="font-heading tracking-tight">Edit Lowongan</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSave} className="space-y-4">
+          {/* Judul */}
+          <div>
+            <Label className="text-xs uppercase tracking-wider text-zinc-600">Judul Posisi</Label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Contoh: Payroll Specialist"
+              className="mt-1 rounded-sm"
+              data-testid="edit-job-title"
+            />
+          </div>
+
+          {/* Target Posisi */}
+          <div>
+            <Label className="text-xs uppercase tracking-wider text-zinc-600">
+              Deskripsi Singkat / Target Posisi
+              <span className="ml-1 normal-case text-zinc-400 font-normal">(opsional)</span>
+            </Label>
+            <Input
+              value={targetPosition}
+              onChange={(e) => setTargetPosition(e.target.value)}
+              placeholder="Contoh: Mengelola proses penggajian bulanan..."
+              className="mt-1 rounded-sm"
+              data-testid="edit-job-target-position"
+            />
+          </div>
+
+          {/* Lokasi + Periode */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-zinc-600">
+                Lokasi Penempatan
+                <span className="ml-1 normal-case text-zinc-400 font-normal">(opsional)</span>
+              </Label>
+              <Input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Kota atau Nama Unit"
+                className="mt-1 rounded-sm text-xs"
+                data-testid="edit-job-location"
+              />
+            </div>
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-zinc-600">
+                Status Lowongan
+              </Label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="mt-1 flex h-9 w-full rounded-sm border border-zinc-200 bg-transparent px-2.5 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950"
+                data-testid="edit-job-status"
+              >
+                <option value="draft">Draft</option>
+                <option value="active">Aktif</option>
+                <option value="closed">Ditutup</option>
+                <option value="archived">Diarsipkan</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Periode Aktif */}
+          <div>
+            <Label className="text-xs uppercase tracking-wider text-zinc-600">
+              Periode Lowongan Aktif
+              <span className="ml-1 normal-case text-zinc-400 font-normal">(opsional)</span>
+            </Label>
+            <div className="flex gap-2 items-center mt-1">
+              <div className="flex-1">
+                <p className="text-[10px] text-zinc-400 mb-1">Mulai</p>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="flex h-9 w-full rounded-sm border border-zinc-200 bg-transparent px-2.5 py-1 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950"
+                  data-testid="edit-job-start-date"
+                />
+              </div>
+              <span className="text-xs text-zinc-400 font-mono mt-4">s/d</span>
+              <div className="flex-1">
+                <p className="text-[10px] text-zinc-400 mb-1">Selesai</p>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="flex h-9 w-full rounded-sm border border-zinc-200 bg-transparent px-2.5 py-1 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950"
+                  data-testid="edit-job-end-date"
+                />
+              </div>
+              {endDate && (
+                <button
+                  type="button"
+                  onClick={() => setEndDate("")}
+                  className="text-[10px] text-zinc-400 hover:text-rose-500 mt-4 whitespace-nowrap"
+                >
+                  Hapus
+                </button>
+              )}
+            </div>
+            {endDate && (
+              <p className="text-[10px] text-amber-600 mt-1.5">
+                ⚠ Jika tanggal selesai telah lewat, lowongan akan otomatis berstatus Ditutup.
+              </p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              className="rounded-sm border-zinc-300 text-xs"
+            >
+              Batal
+            </Button>
+            <Button
+              type="submit"
+              disabled={submitting}
+              className="rounded-sm bg-zinc-900 hover:bg-zinc-800"
+              data-testid="edit-job-submit"
+            >
+              {submitting ? "Menyimpan..." : "Simpan Perubahan"}
             </Button>
           </DialogFooter>
         </form>
