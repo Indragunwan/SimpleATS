@@ -22,7 +22,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str
+    password: Optional[str] = ""
 
 
 class UserUpdate(BaseModel):
@@ -41,6 +41,10 @@ class UserOut(UserBase):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class GoogleLoginRequest(BaseModel):
+    credential: str
 
 
 class LoginResponse(BaseModel):

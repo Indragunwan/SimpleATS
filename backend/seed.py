@@ -24,7 +24,7 @@ DEMO_USERS = [
     },
     {
         "name": "Adi Admin",
-        "email": "admin@demo.com",
+        "email": "hrdaplzoommeeting@gmail.com",
         "password": "demo123",
         "role": "admin_it",
     },

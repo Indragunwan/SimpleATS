@@ -1,9 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Sparkles } from "lucide-react";
 
@@ -11,28 +8,52 @@ const BG_URL =
   "https://static.prod-images.emergentagent.com/jobs/57dafff3-9277-4df6-9ac8-0567f8fd084f/images/ee4b6ce41eeaac837c5e44926f26547279b9247dc76e6f0bc95ce264069b0e89.png";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    document.body.appendChild(script);
+
+    script.onload = () => {
+      if (window.google) {
+        window.google.accounts.id.initialize({
+          client_id: process.env.REACT_APP_GOOGLE_CLIENT_ID || "",
+          callback: handleGoogleLogin,
+        });
+        window.google.accounts.id.renderButton(
+          document.getElementById("google-signin-btn"),
+          { 
+            theme: "outline", 
+            size: "large", 
+            width: "100%",
+            text: "signin_with",
+            shape: "square"
+          }
+        );
+      }
+    };
+
+    return () => {
+      document.body.removeChild(script);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleGoogleLogin = async (response) => {
     setLoading(true);
     try {
-      await login(email, password);
+      await loginWithGoogle(response.credential);
       navigate("/dashboard");
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Gagal masuk");
+      toast.error(err?.response?.data?.detail || "Gagal masuk menggunakan Akun Google");
     } finally {
       setLoading(false);
     }
-  };
-
-  const fillDemo = (em) => {
-    setEmail(em);
-    setPassword("123");
   };
 
   return (
@@ -76,72 +97,17 @@ export default function Login() {
           <h2 className="font-heading text-3xl font-semibold tracking-tight" data-testid="login-title">
             Masuk
           </h2>
-          <p className="mt-2 text-sm text-zinc-500">Gunakan kredensial internal Anda.</p>
+          <p className="mt-2 text-sm text-zinc-500 mb-8">
+            Gunakan Akun Google Perusahaan Anda yang telah terdaftar untuk mengakses platform.
+          </p>
 
-          <form onSubmit={handleSubmit} className="mt-8 space-y-5" data-testid="login-form">
-            <div>
-              <Label htmlFor="email" className="text-xs font-medium text-zinc-700 uppercase tracking-wide">
-                Email
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="nama@perusahaan.id"
-                required
-                data-testid="login-email-input"
-                className="mt-2 rounded-sm border-zinc-300 focus-visible:ring-zinc-900"
-              />
-            </div>
-            <div>
-              <Label htmlFor="password" className="text-xs font-medium text-zinc-700 uppercase tracking-wide">
-                Kata Sandi
-              </Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                data-testid="login-password-input"
-                className="mt-2 rounded-sm border-zinc-300 focus-visible:ring-zinc-900"
-              />
-            </div>
-            <Button
-              type="submit"
-              disabled={loading}
-              data-testid="login-submit-button"
-              className="w-full rounded-sm bg-zinc-900 hover:bg-zinc-800 text-white h-10"
-            >
-              {loading ? "Memproses..." : "Masuk"}
-            </Button>
-          </form>
-
-          <div className="mt-10 pt-6 border-t border-zinc-200">
-            <div className="text-xs uppercase tracking-wider text-zinc-500 font-medium mb-3">
-              Akun Demo
-            </div>
-            <div className="space-y-2">
-              {[
-                { email: "hr@demo.com", role: "HR Recruiter" },
-                { email: "manager@demo.com", role: "Hiring Manager" },
-                { email: "admin@demo.com", role: "Admin IT" },
-              ].map((d) => (
-                <button
-                  key={d.email}
-                  type="button"
-                  onClick={() => fillDemo(d.email)}
-                  data-testid={`demo-account-${d.email.split("@")[0]}`}
-                  className="w-full flex items-center justify-between px-3 py-2 text-xs border border-zinc-200 hover:border-zinc-900 hover:bg-zinc-50 rounded-sm text-left transition-colors"
-                >
-                  <span className="font-mono text-zinc-700">{d.email}</span>
-                  <span className="text-zinc-500">{d.role}</span>
-                </button>
-              ))}
-              <div className="text-xs text-zinc-400 font-mono pt-1">Password: 123</div>
-            </div>
+          <div className="space-y-4">
+            <div id="google-signin-btn" className="w-full min-h-[44px]" data-testid="google-login-button"></div>
+            {loading && (
+              <div className="text-center text-xs text-zinc-500 animate-pulse mt-2">
+                Memverifikasi akun Google...
+              </div>
+            )}
           </div>
         </div>
       </div>

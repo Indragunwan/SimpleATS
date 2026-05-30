@@ -149,7 +149,6 @@ function UserFormDialog({ user, onClose, onSaved }) {
   const [form, setForm] = useState({
     name: user?.name || "",
     email: user?.email || "",
-    password: "", // Optional during edit
     role: user?.role || "hr_recruiter",
   });
 
@@ -158,8 +157,7 @@ function UserFormDialog({ user, onClose, onSaved }) {
     try {
       if (isEdit) {
         const payload = { ...form };
-        if (!payload.password) delete payload.password; // Don't send empty password on edit
-        delete payload.email; // Usually shouldn't update email, but if we do, backend doesn't support changing email yet based on UserUpdate schema.
+        delete payload.email; // Usually shouldn't update email
         await api.patch(`/users/${user.id}`, payload);
         toast.success("Pengguna diperbarui");
       } else {
@@ -200,20 +198,6 @@ function UserFormDialog({ user, onClose, onSaved }) {
               disabled={isEdit}
               className="rounded-sm mt-1 font-mono disabled:opacity-50"
               data-testid="user-email"
-            />
-          </div>
-          <div>
-            <Label className="text-xs uppercase">
-              Kata Sandi {isEdit && <span className="normal-case text-zinc-400 font-normal">(kosongkan jika tidak ingin mengubah)</span>}
-            </Label>
-            <Input
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              required={!isEdit}
-              minLength={6}
-              className="rounded-sm mt-1"
-              data-testid="user-password"
             />
           </div>
           <div>

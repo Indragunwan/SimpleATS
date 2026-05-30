@@ -58,6 +58,7 @@ from models import (  # noqa: E402
     CriterionInput,
     DecisionUpdate,
     EducationUpdate,
+    GoogleLoginRequest,
     JobPostingCreate,
     JobPostingUpdate,
     LoginRequest,
@@ -288,6 +289,59 @@ async def login(payload: LoginRequest, session: AsyncSession = Depends(get_db)) 
     )
 
 
+@api.post("/auth/google-login", response_model=LoginResponse)
+async def google_login(payload: GoogleLoginRequest, session: AsyncSession = Depends(get_db)) -> LoginResponse:
+    import httpx
+    
+    token = payload.credential
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token}")
+        except Exception as e:
+            logger.error(f"Error calling Google tokeninfo: {e}")
+            raise HTTPException(status_code=401, detail="Gagal memverifikasi token Google")
+            
+        if resp.status_code != 200:
+            raise HTTPException(status_code=401, detail="Token Google tidak valid atau kedaluwarsa")
+        id_info = resp.json()
+        
+    google_client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    if google_client_id and id_info.get("aud") != google_client_id:
+        logger.warning(f"OAuth audience mismatch: got {id_info.get('aud')}, expected {google_client_id}")
+        raise HTTPException(status_code=401, detail="Audience token tidak cocok")
+        
+    if id_info.get("email_verified") not in ("true", True):
+        raise HTTPException(status_code=401, detail="Email Google belum diverifikasi")
+        
+    email = id_info.get("email").lower()
+    
+    stmt = select(DBUser).where(DBUser.email == email)
+    res = await session.execute(stmt)
+    user = res.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Email Anda belum terdaftar di sistem. Hubungi Admin IT untuk didaftarkan."
+        )
+        
+    if not getattr(user, "is_active", True):
+        raise HTTPException(status_code=401, detail="Akun Anda dinonaktifkan")
+        
+    access_token = create_access_token(user.id, user.role, user.email)
+    return LoginResponse(
+        access_token=access_token,
+        user=UserOut(
+            id=user.id,
+            name=user.name,
+            email=user.email,
+            role=user.role,
+            is_active=getattr(user, "is_active", True),
+            created_at=user.created_at,
+        )
+    )
+
+
 @api.get("/auth/me", response_model=UserOut)
 async def me(user: dict = Depends(get_current_user), session: AsyncSession = Depends(get_db)) -> UserOut:
     stmt = select(DBUser).where(DBUser.id == user["id"])
@@ -346,7 +400,7 @@ async def create_user(
         id=str(uuid.uuid4()),
         name=payload.name,
         email=payload.email.lower(),
-        password_hash=hash_password(payload.password),
+        password_hash=hash_password(payload.password or "google-oauth-only-no-password-hash-dummy-value"),
         role=payload.role,
         is_active=True,
         created_at=datetime.now(timezone.utc).isoformat(),
