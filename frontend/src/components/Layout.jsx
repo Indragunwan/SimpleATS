@@ -7,7 +7,7 @@ import {
   Settings,
   Users,
   LogOut,
-  Sparkles,
+  Heart,
   UsersRound,
 } from "lucide-react";
 
@@ -39,12 +39,12 @@ export default function Layout({ children }) {
       <aside className="w-60 border-r border-zinc-200 bg-white flex flex-col" data-testid="sidebar">
         <div className="px-5 py-5 border-b border-zinc-200">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-zinc-900 text-white flex items-center justify-center rounded-sm">
-              <Sparkles size={16} />
+            <div className="w-8 h-8 bg-rose-600 text-white flex items-center justify-center rounded-sm">
+              <Heart size={16} fill="currentColor" />
             </div>
             <div>
-              <div className="font-heading text-sm font-semibold tracking-tight leading-none">Semantic CV</div>
-              <div className="text-xs text-zinc-500 mt-1">Screening System</div>
+              <div className="font-heading text-sm font-semibold tracking-tight leading-none">HEARTH</div>
+              <div className="text-xs text-zinc-500 mt-1">HR Applicant Tracking</div>
             </div>
           </div>
         </div>
