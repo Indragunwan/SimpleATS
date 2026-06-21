@@ -5,7 +5,7 @@ from typing import Optional
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "fallback-secret")
@@ -48,10 +48,17 @@ def decode_token(token: str) -> dict:
 
 async def get_current_user(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    token: Optional[str] = Query(None),
 ) -> dict:
-    if not creds:
+    raw_token = None
+    if creds:
+        raw_token = creds.credentials
+    elif token:
+        raw_token = token
+
+    if not raw_token:
         raise HTTPException(status_code=401, detail="Tidak ada token autentikasi")
-    payload = decode_token(creds.credentials)
+    payload = decode_token(raw_token)
     return {
         "id": payload["sub"],
         "role": payload["role"],

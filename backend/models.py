@@ -40,7 +40,7 @@ class UserOut(UserBase):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: Optional[str] = None
 
 
 class GoogleLoginRequest(BaseModel):
@@ -148,11 +148,38 @@ class EducationItem(BaseModel):
     year: str = ""
 
 
+class ParsedCVSkill(BaseModel):
+    skill_name: str = ""
+    years_of_experience: float = 0.0
+    proficiency_level: str = "mid"  # junior | mid | senior
+
+
+class ParsedCVEducation(BaseModel):
+    degree: str = ""
+    major: str = ""
+    institution: str = ""
+    year: Optional[str] = ""
+
+
+class ParsedCVExperience(BaseModel):
+    role: str = ""
+    company: str = ""
+    duration_months: int = 0
+    responsibilities: list[str] = Field(default_factory=list)
+
+
+class ParsedCVProject(BaseModel):
+    project_name: str = ""
+    tech_stack: list[str] = Field(default_factory=list)
+
+
 class ParsedCV(BaseModel):
     summary: str = ""
     work_history: list[WorkHistoryItem] = Field(default_factory=list)
-    education: list[EducationItem] = Field(default_factory=list)
-    skills: list[str] = Field(default_factory=list)
+    education: list[Any] = Field(default_factory=list)
+    skills: list[Any] = Field(default_factory=list)
+    experience: list[ParsedCVExperience] = Field(default_factory=list)
+    projects: list[ParsedCVProject] = Field(default_factory=list)
     hard_skills: list[str] = Field(default_factory=list)
     soft_skills: list[str] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
@@ -162,6 +189,7 @@ class ParsedCV(BaseModel):
     birth_date: str = ""
     address: str = ""
     achievements: list[str] = Field(default_factory=list)
+
 
 
 class Candidate(BaseModel):

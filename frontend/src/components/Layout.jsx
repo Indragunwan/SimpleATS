@@ -34,9 +34,9 @@ export default function Layout({ children }) {
     .toUpperCase();
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 flex" data-testid="app-shell">
+    <div className="min-h-screen bg-zinc-50 text-zinc-900 flex print:block print:bg-white" data-testid="app-shell">
       {/* Sidebar */}
-      <aside className="w-60 border-r border-zinc-200 bg-white flex flex-col" data-testid="sidebar">
+      <aside className="w-60 border-r border-zinc-200 bg-white flex flex-col print:hidden" data-testid="sidebar">
         <div className="px-5 py-5 border-b border-zinc-200">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-rose-600 text-white flex items-center justify-center rounded-sm">

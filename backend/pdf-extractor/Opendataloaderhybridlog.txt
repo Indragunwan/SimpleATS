@@ -1,0 +1,141 @@
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:5002 (Press CTRL+C to quit)
+INFO:     127.0.0.1:59564 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59565 - "GET /health HTTP/1.1" 200 OK
+2026-06-03 09:57:06,134 - INFO - detected formats: [<InputFormat.PDF: 'pdf'>]
+2026-06-03 09:57:06,212 - INFO - Going to convert document batch...
+2026-06-03 09:57:06,212 - INFO - Initializing pipeline for StandardPdfPipeline with options hash 3c3b55fb0cb883781b36fd836ede760d
+2026-06-03 09:57:06,222 - INFO - Loading plugin 'docling_defaults'
+2026-06-03 09:57:06,226 - INFO - Registered picture descriptions: ['picture_description_vlm_engine', 'vlm', 'api']
+2026-06-03 09:57:06,368 - INFO - Accelerator device: 'cpu'
+2026-06-03 09:57:07,814 - INFO - Loading plugin 'docling_defaults'
+2026-06-03 09:57:07,818 - INFO - Registered layout engines: ['layout_object_detection', 'docling_layout_default', 'docling_experimental_table_crops_layout']
+2026-06-03 09:57:07,831 - INFO - Accelerator device: 'cpu'
+2026-06-03 09:57:08,709 - INFO - HTTP Request: GET https://huggingface.co/api/models/docling-project/docling-layout-heron/revision/main "HTTP/1.1 200 OK"
+Loading weights: 100%|███████████████████████████████████████████████████████████████████| 770/770 [00:00<00:00, 11351.82it/s]
+2026-06-03 09:57:08,987 - INFO - Loading plugin 'docling_defaults'
+2026-06-03 09:57:08,990 - INFO - Registered table structure engines: ['docling_tableformer', 'docling_tableformer_v2', 'granite_vision_table']
+2026-06-03 09:57:09,246 - INFO - HTTP Request: GET https://huggingface.co/api/models/docling-project/docling-models/revision/v2.3.0 "HTTP/1.1 200 OK"
+2026-06-03 09:57:09,267 - INFO - Accelerator device: 'cpu'
+2026-06-03 09:57:09,704 - INFO - Processing document tmpfv2659r1.pdf
+2026-06-03 09:57:11,884 - ERROR - Stage preprocess failed for run 1, pages [11]: std::bad_alloc
+2026-06-03 09:57:11,981 - ERROR - Stage preprocess failed for run 1, pages [12]: std::bad_alloc
+2026-06-03 09:57:12,070 - ERROR - Stage preprocess failed for run 1, pages [13]: std::bad_alloc
+2026-06-03 09:57:12,194 - ERROR - Stage preprocess failed for run 1, pages [14]: std::bad_alloc
+2026-06-03 09:57:12,489 - ERROR - Stage preprocess failed for run 1, pages [16]: std::bad_alloc
+2026-06-03 09:57:12,540 - ERROR - Stage preprocess failed for run 1, pages [17]: std::bad_alloc
+2026-06-03 09:57:12,603 - ERROR - Stage preprocess failed for run 1, pages [18]: std::bad_alloc
+2026-06-03 09:57:12,664 - ERROR - Stage preprocess failed for run 1, pages [19]: std::bad_alloc
+2026-06-03 09:57:12,764 - ERROR - Stage preprocess failed for run 1, pages [20]: std::bad_alloc
+2026-06-03 09:57:12,863 - ERROR - Stage preprocess failed for run 1, pages [21]: std::bad_alloc
+2026-06-03 09:57:12,978 - ERROR - Stage preprocess failed for run 1, pages [22]: std::bad_alloc
+2026-06-03 09:57:13,044 - ERROR - Stage preprocess failed for run 1, pages [23]: std::bad_alloc
+2026-06-03 09:57:13,113 - ERROR - Stage preprocess failed for run 1, pages [24]: std::bad_alloc
+2026-06-03 09:57:13,179 - ERROR - Stage preprocess failed for run 1, pages [25]: std::bad_alloc
+2026-06-03 09:57:13,298 - ERROR - Stage preprocess failed for run 1, pages [26]: std::bad_alloc
+2026-06-03 09:57:13,438 - ERROR - Stage preprocess failed for run 1, pages [27]: std::bad_alloc
+2026-06-03 09:57:13,496 - ERROR - Stage preprocess failed for run 1, pages [28]: std::bad_alloc
+2026-06-03 09:57:13,572 - ERROR - Stage preprocess failed for run 1, pages [29]: std::bad_alloc
+2026-06-03 09:57:13,644 - ERROR - Stage preprocess failed for run 1, pages [30]: std::bad_alloc
+2026-06-03 09:57:13,768 - ERROR - Stage preprocess failed for run 1, pages [31]: std::bad_alloc
+2026-06-03 09:57:13,845 - ERROR - Stage preprocess failed for run 1, pages [32]: std::bad_alloc
+2026-06-03 09:57:13,915 - ERROR - Stage preprocess failed for run 1, pages [33]: std::bad_alloc
+2026-06-03 09:57:13,984 - ERROR - Stage preprocess failed for run 1, pages [34]: std::bad_alloc
+2026-06-03 09:57:14,061 - ERROR - Stage preprocess failed for run 1, pages [35]: std::bad_alloc
+2026-06-03 09:57:14,130 - ERROR - Stage preprocess failed for run 1, pages [36]: std::bad_alloc
+2026-06-03 09:57:14,237 - ERROR - Stage preprocess failed for run 1, pages [37]: std::bad_alloc
+2026-06-03 09:57:14,364 - ERROR - Stage preprocess failed for run 1, pages [38]: std::bad_alloc
+2026-06-03 09:57:14,416 - ERROR - Stage preprocess failed for run 1, pages [39]: std::bad_alloc
+2026-06-03 09:57:14,485 - ERROR - Stage preprocess failed for run 1, pages [40]: std::bad_alloc
+2026-06-03 09:57:14,554 - ERROR - Stage preprocess failed for run 1, pages [41]: std::bad_alloc
+2026-06-03 09:57:14,638 - ERROR - Stage preprocess failed for run 1, pages [42]: std::bad_alloc
+2026-06-03 09:57:14,693 - ERROR - Stage preprocess failed for run 1, pages [43]: std::bad_alloc
+2026-06-03 09:57:14,771 - ERROR - Stage preprocess failed for run 1, pages [44]: std::bad_alloc
+2026-06-03 09:57:14,819 - ERROR - Stage preprocess failed for run 1, pages [45]: std::bad_alloc
+PS G:\pdf-extractor> opendataloader-pdf-hybrid --port 5002
+2026-06-03 10:13:50,931 - INFO - Loading plugin 'docling_defaults'
+2026-06-03 10:13:50,945 - INFO - Registered ocr engines: ['auto', 'easyocr', 'kserve_v2_ocr', 'ocrmac', 'rapidocr', 'tesserocr', 'tesseract']
+2026-06-03 10:13:50,945 - INFO - Accelerator: CPU (no GPU detected)
+2026-06-03 10:13:50,945 - INFO - Starting Docling Fast Server on http://0.0.0.0:5002
+2026-06-03 10:13:50,946 - INFO - OCR settings: do_ocr=True, ocr_engine=easyocr, force_ocr=False, lang=default
+2026-06-03 10:13:50,946 - INFO - Max file size: unlimited
+INFO:     Started server process [29580]
+INFO:     Waiting for application startup.
+2026-06-03 10:13:51,002 - INFO - Initializing DocumentConverter (do_ocr=True, ocr_engine=easyocr, force_ocr=False, lang=default, enrichments=none, device=auto)...
+2026-06-03 10:13:53,694 - INFO - DocumentConverter initialized in 2.69s
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:5002 (Press CTRL+C to quit)
+INFO:     127.0.0.1:60811 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60812 - "GET /health HTTP/1.1" 200 OK
+2026-06-03 10:14:11,393 - INFO - detected formats: [<InputFormat.PDF: 'pdf'>]
+2026-06-03 10:14:11,443 - INFO - Going to convert document batch...
+2026-06-03 10:14:11,444 - INFO - Initializing pipeline for StandardPdfPipeline with options hash 3c3b55fb0cb883781b36fd836ede760d
+2026-06-03 10:14:11,452 - INFO - Loading plugin 'docling_defaults'
+2026-06-03 10:14:11,455 - INFO - Registered picture descriptions: ['picture_description_vlm_engine', 'vlm', 'api']
+2026-06-03 10:14:11,559 - INFO - Accelerator device: 'cpu'
+2026-06-03 10:14:13,021 - INFO - Loading plugin 'docling_defaults'
+2026-06-03 10:14:13,027 - INFO - Registered layout engines: ['layout_object_detection', 'docling_layout_default', 'docling_experimental_table_crops_layout']
+2026-06-03 10:14:13,041 - INFO - Accelerator device: 'cpu'
+2026-06-03 10:14:13,960 - INFO - HTTP Request: GET https://huggingface.co/api/models/docling-project/docling-layout-heron/revision/main "HTTP/1.1 200 OK"
+Loading weights: 100%|███████████████████████████████████████████████████████████████████| 770/770 [00:00<00:00, 10087.22it/s]
+2026-06-03 10:14:14,250 - INFO - Loading plugin 'docling_defaults'
+2026-06-03 10:14:14,254 - INFO - Registered table structure engines: ['docling_tableformer', 'docling_tableformer_v2', 'granite_vision_table']
+2026-06-03 10:14:14,514 - INFO - HTTP Request: GET https://huggingface.co/api/models/docling-project/docling-models/revision/v2.3.0 "HTTP/1.1 200 OK"
+2026-06-03 10:14:14,538 - INFO - Accelerator device: 'cpu'
+2026-06-03 10:14:15,035 - INFO - Processing document tmpb79a_3sn.pdf
+2026-06-03 10:14:17,309 - ERROR - Stage preprocess failed for run 1, pages [11]: std::bad_alloc
+2026-06-03 10:14:18,380 - ERROR - Stage preprocess failed for run 1, pages [12]: std::bad_alloc
+2026-06-03 10:14:19,448 - ERROR - Stage preprocess failed for run 1, pages [13]: std::bad_alloc
+2026-06-03 10:14:20,535 - ERROR - Stage preprocess failed for run 1, pages [14]: std::bad_alloc
+2026-06-03 10:14:21,611 - ERROR - Stage preprocess failed for run 1, pages [15]: std::bad_alloc
+2026-06-03 10:14:22,679 - ERROR - Stage preprocess failed for run 1, pages [16]: std::bad_alloc
+2026-06-03 10:14:23,722 - ERROR - Stage preprocess failed for run 1, pages [17]: std::bad_alloc
+2026-06-03 10:14:24,793 - ERROR - Stage preprocess failed for run 1, pages [18]: std::bad_alloc
+2026-06-03 10:14:25,854 - ERROR - Stage preprocess failed for run 1, pages [19]: std::bad_alloc
+2026-06-03 10:14:26,946 - ERROR - Stage preprocess failed for run 1, pages [20]: std::bad_alloc
+2026-06-03 10:14:28,010 - ERROR - Stage preprocess failed for run 1, pages [21]: std::bad_alloc
+2026-06-03 10:14:29,100 - ERROR - Stage preprocess failed for run 1, pages [22]: std::bad_alloc
+2026-06-03 10:14:30,155 - ERROR - Stage preprocess failed for run 1, pages [23]: std::bad_alloc
+2026-06-03 10:14:31,220 - ERROR - Stage preprocess failed for run 1, pages [24]: std::bad_alloc
+2026-06-03 10:14:32,540 - ERROR - Stage preprocess failed for run 1, pages [25]: std::bad_alloc
+2026-06-03 10:14:33,656 - ERROR - Stage preprocess failed for run 1, pages [26]: std::bad_alloc
+2026-06-03 10:14:34,787 - ERROR - Stage preprocess failed for run 1, pages [27]: std::bad_alloc
+2026-06-03 10:14:35,916 - ERROR - Stage preprocess failed for run 1, pages [28]: std::bad_alloc
+2026-06-03 10:14:37,062 - ERROR - Stage preprocess failed for run 1, pages [29]: std::bad_alloc
+2026-06-03 10:14:38,160 - ERROR - Stage preprocess failed for run 1, pages [30]: std::bad_alloc
+2026-06-03 10:14:39,258 - ERROR - Stage preprocess failed for run 1, pages [31]: std::bad_alloc
+2026-06-03 10:14:40,378 - ERROR - Stage preprocess failed for run 1, pages [32]: std::bad_alloc
+2026-06-03 10:14:41,498 - ERROR - Stage preprocess failed for run 1, pages [33]: std::bad_alloc
+2026-06-03 10:14:42,561 - ERROR - Stage preprocess failed for run 1, pages [34]: std::bad_alloc
+2026-06-03 10:14:43,625 - ERROR - Stage preprocess failed for run 1, pages [35]: std::bad_alloc
+2026-06-03 10:14:44,682 - ERROR - Stage preprocess failed for run 1, pages [36]: std::bad_alloc
+2026-06-03 10:14:45,772 - ERROR - Stage preprocess failed for run 1, pages [37]: std::bad_alloc
+2026-06-03 10:14:46,866 - ERROR - Stage preprocess failed for run 1, pages [38]: std::bad_alloc
+2026-06-03 10:14:47,906 - ERROR - Stage preprocess failed for run 1, pages [39]: std::bad_alloc
+2026-06-03 10:14:48,974 - ERROR - Stage preprocess failed for run 1, pages [40]: std::bad_alloc
+2026-06-03 10:14:50,037 - ERROR - Stage preprocess failed for run 1, pages [41]: std::bad_alloc
+2026-06-03 10:14:51,107 - ERROR - Stage preprocess failed for run 1, pages [42]: std::bad_alloc
+2026-06-03 10:14:52,188 - ERROR - Stage preprocess failed for run 1, pages [43]: std::bad_alloc
+2026-06-03 10:14:53,276 - ERROR - Stage preprocess failed for run 1, pages [44]: std::bad_alloc
+2026-06-03 10:14:54,334 - ERROR - Stage preprocess failed for run 1, pages [45]: std::bad_alloc
+C:\Users\indra\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+C:\Users\indra\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+C:\Users\indra\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+C:\Users\indra\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+C:\Users\indra\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+C:\Users\indra\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+C:\Users\indra\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+C:\Users\indra\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+C:\Users\indra\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+2026-06-03 10:15:42,609 - INFO - Finished converting document tmpb79a_3sn.pdf in 91.22 sec.
+2026-06-03 10:15:42,637 - WARNING - Docling returned partial_success: 35 error(s), failed_pages will be reported
+INFO:     127.0.0.1:60812 - "POST /v1/convert/file HTTP/1.1" 200 OK

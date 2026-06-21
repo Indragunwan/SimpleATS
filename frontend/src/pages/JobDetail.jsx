@@ -338,26 +338,22 @@ export default function JobDetail() {
           >
             <Sparkles size={14} className="mr-1.5" /> Saran dari Pool
           </Button>
-          {user?.role !== "hr_recruiter" && (
-            <Button
-              variant="outline"
-              onClick={handleReextract}
-              className="rounded-sm border-zinc-300"
-              data-testid="reextract-button"
-            >
-              <RotateCw size={14} className="mr-1.5" /> Ekstrak Ulang
-            </Button>
-          )}
-          {user?.role !== "hr_recruiter" && (
-            <Button
-              variant="outline"
-              onClick={handleDeleteJob}
-              className="rounded-sm border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-              data-testid="delete-job-button"
-            >
-              <Trash2 size={14} className="mr-1.5" /> Hapus Lowongan
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            onClick={handleReextract}
+            className="rounded-sm border-zinc-300"
+            data-testid="reextract-button"
+          >
+            <RotateCw size={14} className="mr-1.5" /> Ekstrak Ulang
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleDeleteJob}
+            className="rounded-sm border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+            data-testid="delete-job-button"
+          >
+            <Trash2 size={14} className="mr-1.5" /> Hapus Lowongan
+          </Button>
           {activeTab === "candidates" && (
             <>
               <Button
@@ -421,17 +417,15 @@ export default function JobDetail() {
                 Konfigurasi Lowongan
               </h3>
               {!editingMeta ? (
-                user?.role !== "hr_recruiter" && (
-                  <Button
-                    onClick={startEditingMeta}
-                    variant="outline"
-                    size="sm"
-                    className="rounded-sm border-zinc-300 h-7 text-xs"
-                    data-testid="edit-meta-button"
-                  >
-                    <Pencil size={12} className="mr-1" /> Edit
-                  </Button>
-                )
+                <Button
+                  onClick={startEditingMeta}
+                  variant="outline"
+                  size="sm"
+                  className="rounded-sm border-zinc-300 h-7 text-xs"
+                  data-testid="edit-meta-button"
+                >
+                  <Pencil size={12} className="mr-1" /> Edit
+                </Button>
               ) : (
                 <div className="flex gap-1.5">
                   <Button

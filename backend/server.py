@@ -72,7 +72,12 @@ from seed import seed_default_ai_config, seed_demo_users, backfill_criteria_ids 
 
 # Database Engine setup
 DATABASE_URL = os.environ.get("DATABASE_URL", "mysql+aiomysql://root:@localhost/simple_ats")
-engine = create_async_engine(DATABASE_URL, echo=False)
+
+connect_args = {}
+if "postgresql" in DATABASE_URL:
+    connect_args["ssl"] = False
+
+engine = create_async_engine(DATABASE_URL, connect_args=connect_args, echo=False)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
@@ -83,10 +88,22 @@ async def get_db():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Auto create tables if they do not exist
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(text("ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS embeddings_provider_id VARCHAR(36);"))
+    # Startup: Auto create tables and migrate if database is ready (with retries for startup timing)
+    max_retries = 15
+    retry_interval = 2
+    for attempt in range(max_retries):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                await conn.execute(text("ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS embeddings_provider_id VARCHAR(36);"))
+            logger.info("Successfully connected to database and migrated tables.")
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error(f"Failed to connect to database after {max_retries} attempts: {e}")
+                raise
+            logger.warning(f"Database connection attempt {attempt + 1}/{max_retries} failed: {e}. Retrying in {retry_interval} seconds...")
+            await asyncio.sleep(retry_interval)
         
     async with async_session() as session:
         await seed_demo_users(session)
@@ -312,11 +329,6 @@ async def health(session: AsyncSession = Depends(get_db)) -> dict:
 # ============ AUTH ============
 @api.post("/auth/login", response_model=LoginResponse)
 async def login(payload: LoginRequest, session: AsyncSession = Depends(get_db)) -> LoginResponse:
-    if os.environ.get("TESTING_PASSWORD_LOGIN_ALLOWED") != "true":
-        raise HTTPException(
-            status_code=403,
-            detail="Login menggunakan kata sandi dinonaktifkan. Silakan gunakan Google Login."
-        )
     email_lower = payload.email.lower()
     if email_lower == "admin@demo.com":
         email_lower = "hrdaplzoommeeting@gmail.com"
@@ -900,6 +912,7 @@ async def _screen_candidate_for_job(
         "edu_level_pct": weights.get("edu_level_pct", 70),
         "edu_major_pct": weights.get("edu_major_pct", 30),
         "responsibilities": job.responsibilities or [],
+        "weights": weights,
         "must_have": [
             {"value": c["value"], "weight": c.get("weight", 3)}
             for c in (job.criteria or []) if c.get("type") == "must"
@@ -954,7 +967,17 @@ LLM_SEMAPHORE = asyncio.Semaphore(1)
 
 def _build_cv_search_text(cand_name: str, parsed: dict) -> str:
     summary = parsed.get("summary") or ""
-    skills = ", ".join(parsed.get("skills", []) or [])
+    
+    # Handle list of objects vs list of strings for skills
+    skills_list = parsed.get("skills", []) or []
+    skills_str_list = []
+    for s in skills_list:
+        if isinstance(s, dict):
+            skills_str_list.append(s.get("skill_name", ""))
+        elif isinstance(s, str):
+            skills_str_list.append(s)
+    skills = ", ".join(skills_str_list)
+    
     hard_skills = ", ".join(parsed.get("hard_skills", []) or [])
     soft_skills = ", ".join(parsed.get("soft_skills", []) or [])
     
@@ -962,14 +985,18 @@ def _build_cv_search_text(cand_name: str, parsed: dict) -> str:
     for edu in parsed.get("education", []) or []:
         degree = edu.get("degree") or ""
         inst = edu.get("institution") or ""
-        edu_list.append(f"{degree} di {inst}")
+        degree_str = degree.get("degree") if isinstance(degree, dict) else degree
+        inst_str = inst.get("institution") if isinstance(inst, dict) else inst
+        edu_list.append(f"{degree_str} di {inst_str}")
     edu_str = ", ".join(edu_list)
     
     work_list = []
-    for w in parsed.get("work_history", []) or []:
-        pos = w.get("position") or ""
-        comp = w.get("company") or ""
-        work_list.append(f"{pos} di {comp}")
+    history = parsed.get("experience") or parsed.get("work_history") or []
+    for w in history:
+        if isinstance(w, dict):
+            pos = w.get("role") or w.get("position") or ""
+            comp = w.get("company") or ""
+            work_list.append(f"{pos} di {comp}")
     work_str = ", ".join(work_list)
     
     parts = []
@@ -982,6 +1009,7 @@ def _build_cv_search_text(cand_name: str, parsed: dict) -> str:
     if work_str: parts.append(f"Pengalaman Kerja: {work_str}")
     
     return "\n".join(parts)
+
 
 
 async def _process_candidate(candidate_id: str, job_id: str) -> None:
@@ -1000,7 +1028,11 @@ async def _process_candidate(candidate_id: str, job_id: str) -> None:
                 await session.commit()
                 
                 parsed = await parse_cv(cand.raw_text, parsing_cfg)
-                cand.name = parsed.get("name") or cand.name or "Unknown"
+                parsed_name = parsed.get("name")
+                if parsed_name and parsed_name != "Unknown" and parsed_name.strip():
+                    cand.name = parsed_name.strip()
+                elif not cand.name or cand.name == "Memproses...":
+                    cand.name = cand.file_name or "Unknown"
                 cand.email = parsed.get("email", "")
                 cand.phone = parsed.get("phone", "")
                 cand.parsed = parsed
@@ -1035,6 +1067,8 @@ async def _process_candidate(candidate_id: str, job_id: str) -> None:
                 if cand:
                     cand.status = "failed"
                     cand.error_message = error_msg
+                    if not cand.name or cand.name == "Memproses...":
+                        cand.name = cand.file_name or "Unknown"
                     await session.commit()
 
 
@@ -1133,10 +1167,21 @@ async def upload_cv(
         except Exception as e:
             logger.error(f"Gagal menyimpan file CV: {e}")
             raise HTTPException(500, f"Gagal menyimpan file CV {filename}")
-            
+
+        # Save extracted text as .md for inspection
+        md_name = os.path.splitext(safe_name)[0] + ".md"
+        try:
+            with open(uploads_dir / md_name, "w", encoding="utf-8") as md_file:
+                md_file.write(f"# Ekstraksi: {filename}\n\n{text}")
+        except Exception as e:
+            logger.warning(f"Gagal menyimpan .md untuk {filename}: {e}")
+
+        # Derive display name from original filename (strip extension, keep unicode)
+        original_display = os.path.splitext(filename)[0].strip() or safe_name
+
         doc = DBCandidate(
             id=cid,
-            name="Memproses...",
+            name=original_display,
             email="",
             phone="",
             file_name=safe_name,
@@ -1173,6 +1218,7 @@ async def list_job_candidates(
             "name": c.name,
             "email": c.email,
             "phone": c.phone or "",
+            "file_name": c.file_name,
             "status": c.status,
             "error_message": c.error_message or "",
             "created_at": c.created_at,
@@ -1184,6 +1230,8 @@ async def list_job_candidates(
     out = []
     for r in results:
         c = cand_map.get(r.candidate_id, {})
+        c_name = c.get("name")
+        c_file = c.get("file_name")
         out.append(
             {
                 "id": r.id,
@@ -1203,7 +1251,7 @@ async def list_job_candidates(
                 "decided_by": r.decided_by,
                 "decided_at": r.decided_at,
                 "created_at": r.created_at,
-                "candidate_name": c.get("name", "Unknown"),
+                "candidate_name": c_name if (c_name and c_name != "Memproses..." and c_name != "Unknown") else (c_file or "Unknown"),
                 "candidate_email": c.get("email", ""),
                 "candidate_phone": c.get("phone", ""),
                 "candidate_status": c.get("status", "parsed"),
@@ -1222,7 +1270,7 @@ async def list_job_candidates(
                     "id": None,
                     "job_posting_id": job_id,
                     "candidate_id": c.id,
-                    "candidate_name": c.name or "Memproses...",
+                    "candidate_name": c.name if (c.name and c.name != "Memproses..." and c.name != "Unknown") else (c.file_name or "Memproses..."),
                     "candidate_email": c.email or "",
                     "candidate_phone": c.phone or "",
                     "candidate_status": c.status or "pending",
@@ -1335,7 +1383,6 @@ async def rescreen_all_candidates(
 async def rescreen_candidate(
     job_id: str,
     candidate_id: str,
-    background_tasks: BackgroundTasks,
     user: dict = Depends(require_roles("hr_recruiter", "hiring_manager", "admin_it")),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -1368,9 +1415,21 @@ async def rescreen_candidate(
         
     await session.commit()
     
-    # Queue background task to process candidate again
-    background_tasks.add_task(_process_candidate, candidate_id, job_id)
-    return {"status": "processing"}
+    # Process candidate synchronously to await the screening completion
+    await _process_candidate(candidate_id, job_id)
+    
+    # Refresh candidate from database to check the result
+    stmt_check = select(DBCandidate).where(DBCandidate.id == candidate_id)
+    res_check = await session.execute(stmt_check)
+    cand_check = res_check.scalar_one_or_none()
+    
+    if not cand_check:
+        raise HTTPException(404, "Kandidat tidak ditemukan setelah pemrosesan ulang")
+        
+    if cand_check.status == "failed":
+        raise HTTPException(500, cand_check.error_message or "Proses screening ulang gagal")
+        
+    return {"status": "success"}
 
 
 @api.delete("/jobs/{job_id}/candidates/{candidate_id}")
@@ -1565,13 +1624,21 @@ async def search_talent_pool(
             if isinstance(work_history[0], dict):
                 current_position = work_history[0].get("position", "")
                 
+        raw_skills = []
+        for sk in (parsed.get("skills", []) or []):
+            if isinstance(sk, dict):
+                raw_skills.append(sk.get("skill_name", ""))
+            else:
+                raw_skills.append(sk)
+        top_skills = raw_skills[:6]
+
         out.append({
             "id": c.id,
-            "name": c.name or "Unknown",
+            "name": c.name if (c.name and c.name != "Memproses..." and c.name != "Unknown") else (c.file_name or "Unknown"),
             "email": c.email or "",
             "phone": c.phone or "",
             "years_of_experience": parsed.get("years_of_experience", 0),
-            "top_skills": (parsed.get("skills", []) or [])[:6],
+            "top_skills": top_skills,
             "current_position": current_position,
             "best_score": s.get("best_score", 0),
             "screenings_count": s.get("screenings_count", 0),
@@ -1644,16 +1711,17 @@ async def search_talent_pool(
         profiles_json = json.dumps(candidate_profiles, ensure_ascii=False)
         
         sys_prompt = (
-            "You are an expert HR AI assistant. Your task is to filter a list of candidates based strictly on the user's search query.\n"
+            "You are an expert HR AI assistant. Your task is to filter a list of candidates based on the user's search query, allowing for semantic flexibility.\n"
             "Return a JSON object with a single key 'matched_candidates' containing an array of objects.\n"
             "Each object must have 'id' (the candidate ID) and 'ai_reason' (a brief 1-2 sentence explanation of why they match the query, in Indonesian).\n\n"
             "CRITICAL INSTRUCTIONS:\n"
-            "1. Be extremely strict. ONLY include candidates that genuinely meet all the explicit criteria in the query (e.g., degree level, major, skills, experience).\n"
-            "2. If the query specifies an education level and major like 'S1 Ekonomi', you MUST reject candidates with other degrees or majors (e.g. reject 'S1 Teknik Elektro', reject 'D3 Teknik Informatika'). Do not be lenient.\n"
-            "3. If a candidate does not match the query, DO NOT include them in the 'matched_candidates' list.\n"
+            "1. Allow semantic flexibility and treat related terms or minor terminology differences as matches (e.g., treat 'React' and 'ReactJS', or 'Frontend' and 'Web Developer', or 'HSE' and 'Safety Officer' as matches).\n"
+            "2. Do not outright reject candidates based on minor terminology differences. For education level and major (e.g., 'S1 Ekonomi'), allow closely related majors or equivalent degrees (e.g. 'S1 Akuntansi' or 'S1 Manajemen' if they fit the role's context).\n"
+            "3. If a candidate matches the search query semantically, include them in the 'matched_candidates' list.\n"
             "4. If no candidates match, return the JSON object with an empty array: {\"matched_candidates\": []}."
         )
         user_prompt = f"User Search Query: '{query}'\n\nCandidates:\n{profiles_json}"
+
         
         llm_response = await asyncio.wait_for(
             call_llm(sys_prompt, user_prompt, scoring_cfg, response_format={"type": "json_object"}),
@@ -1782,14 +1850,22 @@ async def list_talent_pool(
         if work_history and isinstance(work_history, list) and len(work_history) > 0:
             if isinstance(work_history[0], dict):
                 current_position = work_history[0].get("position", "")
+        raw_skills = []
+        for sk in (parsed.get("skills", []) or []):
+            if isinstance(sk, dict):
+                raw_skills.append(sk.get("skill_name", ""))
+            else:
+                raw_skills.append(sk)
+        top_skills = raw_skills[:6]
+
         out.append(
             {
                 "id": c.id,
-                "name": c.name or "Unknown",
+                "name": c.name if (c.name and c.name != "Memproses..." and c.name != "Unknown") else (c.file_name or "Unknown"),
                 "email": c.email or "",
                 "phone": c.phone or "",
                 "years_of_experience": parsed.get("years_of_experience", 0),
-                "top_skills": (parsed.get("skills", []) or [])[:6],
+                "top_skills": top_skills,
                 "current_position": current_position,
                 "best_score": s.get("best_score", 0),
                 "screenings_count": s.get("screenings_count", 0),
@@ -1797,6 +1873,7 @@ async def list_talent_pool(
                 "created_at": c.created_at,
             }
         )
+
     out.sort(key=lambda x: (x["best_score"], x["screenings_count"]), reverse=True)
     return out
 
@@ -1852,7 +1929,7 @@ async def get_pool_candidate(
         })
     cand_dict = {
         "id": cand.id,
-        "name": cand.name,
+        "name": cand.name if (cand.name and cand.name != "Memproses..." and cand.name != "Unknown") else (cand.file_name or "Unknown"),
         "email": cand.email,
         "phone": cand.phone,
         "file_name": cand.file_name,
@@ -2106,7 +2183,7 @@ async def test_provider(
         if is_embedding_model:
             result = await asyncio.wait_for(
                 generate_embedding("Test connection", cfg),
-                timeout=30,
+                timeout=60,
             )
             if isinstance(result, list) and len(result) > 0:
                 return {"success": True, "response": f"Embedding vector generated successfully with {len(result)} dimensions."}
@@ -2119,11 +2196,14 @@ async def test_provider(
                     "Reply OK only.",
                     cfg,
                 ),
-                timeout=30,
+                timeout=60,
             )
             return {"success": True, "response": result[:200]}
+    except asyncio.TimeoutError:
+        return {"success": False, "error": "Koneksi habis waktu / Timeout (Kemungkinan cold-start atau API sedang sangat lambat). Silakan coba lagi."}
     except Exception as e:
-        return {"success": False, "error": str(e)[:300]}
+        err_msg = str(e) or type(e).__name__
+        return {"success": False, "error": err_msg[:300]}
 
 
 @api.post("/config/ai-providers/{cfg_id}/test")
@@ -2149,7 +2229,7 @@ async def test_existing_provider(
         if is_embedding_model:
             result = await asyncio.wait_for(
                 generate_embedding("Test connection", cfg),
-                timeout=30,
+                timeout=60,
             )
             if isinstance(result, list) and len(result) > 0:
                 return {"success": True, "response": f"Embedding vector generated successfully with {len(result)} dimensions."}
@@ -2162,11 +2242,14 @@ async def test_existing_provider(
                     "Reply OK only.",
                     cfg,
                 ),
-                timeout=30,
+                timeout=60,
             )
             return {"success": True, "response": result[:200]}
+    except asyncio.TimeoutError:
+        return {"success": False, "error": "Koneksi habis waktu / Timeout (Kemungkinan cold-start atau API sedang sangat lambat). Silakan coba lagi."}
     except Exception as e:
-        return {"success": False, "error": str(e)[:300]}
+        err_msg = str(e) or type(e).__name__
+        return {"success": False, "error": err_msg[:300]}
 
 
 

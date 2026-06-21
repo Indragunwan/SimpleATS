@@ -1,0 +1,159 @@
+Jun 03, 2026 9:57:28 AM org.opendataloader.pdf.cli.CLIMain processFile
+SEVERE: Exception during processing file C:\Users\indra\Downloads\Monroe Indonesia Talent Market Report 2026_.pdf: Backend processing failed for 43 page(s) with fallback disabled: pages [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45]
+java.io.IOException: Backend processing failed for 43 page(s) with fallback disabled: pages [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45]
+        at org.opendataloader.pdf.processors.HybridDocumentProcessor.failFastIfBackendFailedWithoutFallback(HybridDocumentProcessor.java:424)
+        at org.opendataloader.pdf.processors.HybridDocumentProcessor.processDocument(HybridDocumentProcessor.java:348)
+        at org.opendataloader.pdf.processors.HybridDocumentProcessor.processDocument(HybridDocumentProcessor.java:216)
+        at org.opendataloader.pdf.processors.DocumentProcessor.extractContents(DocumentProcessor.java:182)
+        at org.opendataloader.pdf.processors.DocumentProcessor.processFileWithResult(DocumentProcessor.java:144)
+        at org.opendataloader.pdf.processors.DocumentProcessor.processFile(DocumentProcessor.java:129)
+        at org.opendataloader.pdf.api.OpenDataLoaderPDF.processFile(OpenDataLoaderPDF.java:40)
+        at org.opendataloader.pdf.cli.CLIMain.processFile(CLIMain.java:227)
+        at org.opendataloader.pdf.cli.CLIMain.processPath(CLIMain.java:156)
+        at org.opendataloader.pdf.cli.CLIMain.run(CLIMain.java:109)
+        at org.opendataloader.pdf.cli.CLIMain.main(CLIMain.java:58)
+
+Error running opendataloader-pdf CLI.
+Return code: 1
+PS G:\pdf-extractor> python app.py
+Jun 03, 2026 10:14:09 AM org.opendataloader.pdf.processors.DocumentProcessor preprocessing
+INFO: File name: C:\Users\indra\Downloads\Monroe Indonesia Talent Market Report 2026_.pdf
+Jun 03, 2026 10:14:10 AM org.opendataloader.pdf.processors.DocumentProcessor calculateDocumentInfo
+INFO: Number of pages: 45
+Jun 03, 2026 10:14:10 AM org.opendataloader.pdf.processors.DocumentProcessor calculateDocumentInfo
+INFO: Author: Nabiila
+Jun 03, 2026 10:14:10 AM org.opendataloader.pdf.processors.DocumentProcessor calculateDocumentInfo
+INFO: Title: MCGI Talent Market Report 2026
+Jun 03, 2026 10:14:10 AM org.opendataloader.pdf.processors.DocumentProcessor calculateDocumentInfo
+INFO: Creation date: D:20260209080648+00'00'
+Jun 03, 2026 10:14:10 AM org.opendataloader.pdf.processors.DocumentProcessor calculateDocumentInfo
+INFO: Modification date: D:20260209080816Z
+Jun 03, 2026 10:14:10 AM org.opendataloader.pdf.processors.HybridDocumentProcessor processDocument
+INFO: Starting hybrid processing for 45 pages
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 0
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 1
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 2
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 3
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 4
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 5
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 6
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 7
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 8
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 9
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 10
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 11
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 12
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 13
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 14
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 15
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 16
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 17
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 18
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 19
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 20
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 21
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 22
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 23
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 24
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 25
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 26
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 27
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 28
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 29
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 30
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 31
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 32
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 33
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 34
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 35
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 36
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 37
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 38
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 39
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 40
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 41
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 42
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 43
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.ContentFilterProcessor processBackgrounds
+WARNING: Detected background on page 44
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.HybridDocumentProcessor logTriageSummary
+INFO: Triage summary: JAVA=2, BACKEND=43
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.HybridDocumentProcessor processDocument
+INFO: Routing: 2 pages to Java, 43 pages to Backend
+Jun 03, 2026 10:14:11 AM org.opendataloader.pdf.processors.HybridDocumentProcessor processBackendPath
+INFO: Processing 43 pages via docling-fast backend
+Jun 03, 2026 10:15:42 AM org.opendataloader.pdf.hybrid.DoclingFastServerClient parseResponse
+WARNING: Backend returned partial_success: ["Page 11: std::bad_alloc","Page 12: std::bad_alloc","Page 13: std::bad_alloc","Page 14: std::bad_alloc","Page 15: std::bad_alloc","Page 16: std::bad_alloc","Page 17: std::bad_alloc","Page 18: std::bad_alloc","Page 19: std::bad_alloc","Page 20: std::bad_alloc","Page 21: std::bad_alloc","Page 22: std::bad_alloc","Page 23: std::bad_alloc","Page 24: std::bad_alloc","Page 25: std::bad_alloc","Page 26: std::bad_alloc","Page 27: std::bad_alloc","Page 28: std::bad_alloc","Page 29: std::bad_alloc","Page 30: std::bad_alloc","Page 31: std::bad_alloc","Page 32: std::bad_alloc","Page 33: std::bad_alloc","Page 34: std::bad_alloc","Page 35: std::bad_alloc","Page 36: std::bad_alloc","Page 37: std::bad_alloc","Page 38: std::bad_alloc","Page 39: std::bad_alloc","Page 40: std::bad_alloc","Page 41: std::bad_alloc","Page 42: std::bad_alloc","Page 43: std::bad_alloc","Page 44: std::bad_alloc","Page 45: std::bad_alloc"]
+Jun 03, 2026 10:15:42 AM org.opendataloader.pdf.processors.HybridDocumentProcessor logOcrFallbackCandidates
+INFO: Page 3: 8 element(s) need OCR fallback, 0 OCR words available
+Jun 03, 2026 10:15:42 AM org.opendataloader.pdf.processors.HybridDocumentProcessor logOcrFallbackCandidates
+INFO: Page 5: 1 element(s) need OCR fallback, 0 OCR words available
+Jun 03, 2026 10:15:42 AM org.opendataloader.pdf.processors.HybridDocumentProcessor logOcrFallbackCandidates
+INFO: Page 6: 1 element(s) need OCR fallback, 0 OCR words available
+Jun 03, 2026 10:15:42 AM org.opendataloader.pdf.processors.HybridDocumentProcessor logOcrFallbackCandidates
+INFO: Page 7: 1 element(s) need OCR fallback, 0 OCR words available
+Jun 03, 2026 10:15:42 AM org.opendataloader.pdf.processors.HybridDocumentProcessor logOcrFallbackCandidates
+INFO: Page 9: 2 element(s) need OCR fallback, 0 OCR words available
+Jun 03, 2026 10:15:42 AM org.opendataloader.pdf.processors.HybridDocumentProcessor processDocument
+WARNING: Backend returned partial_success: 34 page(s) failed (pages [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45]), fallback disabled   failing fast
+Jun 03, 2026 10:15:42 AM org.opendataloader.pdf.cli.CLIMain processFile
+SEVERE: Exception during processing file C:\Users\indra\Downloads\Monroe Indonesia Talent Market Report 2026_.pdf: Backend processing failed for 34 page(s) with fallback disabled: pages [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45]
+java.io.IOException: Backend processing failed for 34 page(s) with fallback disabled: pages [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45]
+        at org.opendataloader.pdf.processors.HybridDocumentProcessor.failFastIfBackendFailedWithoutFallback(HybridDocumentProcessor.java:424)
+        at org.opendataloader.pdf.processors.HybridDocumentProcessor.processDocument(HybridDocumentProcessor.java:348)
+        at org.opendataloader.pdf.processors.HybridDocumentProcessor.processDocument(HybridDocumentProcessor.java:216)
+        at org.opendataloader.pdf.processors.DocumentProcessor.extractContents(DocumentProcessor.java:182)
+        at org.opendataloader.pdf.processors.DocumentProcessor.processFileWithResult(DocumentProcessor.java:144)
+        at org.opendataloader.pdf.processors.DocumentProcessor.processFile(DocumentProcessor.java:129)
+        at org.opendataloader.pdf.api.OpenDataLoaderPDF.processFile(OpenDataLoaderPDF.java:40)
+        at org.opendataloader.pdf.cli.CLIMain.processFile(CLIMain.java:227)
+        at org.opendataloader.pdf.cli.CLIMain.processPath(CLIMain.java:156)
+        at org.opendataloader.pdf.cli.CLIMain.run(CLIMain.java:109)
+        at org.opendataloader.pdf.cli.CLIMain.main(CLIMain.java:58)
+
+Error running opendataloader-pdf CLI.
+Return code: 1

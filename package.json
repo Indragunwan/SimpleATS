@@ -1,0 +1,10 @@
+{
+  "name": "simple-ats",
+  "version": "1.0.0",
+  "description": "SimpleATS applicant tracking system starter project",
+  "scripts": {
+    "start": "pg_ctl start -D \"G:\\Program Files\\PostgreSQL\\17\\data\" & start cmd /k \"cd backend && python server.py\" & cd frontend && npm start",
+    "backend": "cd backend && python server.py",
+    "frontend": "cd frontend && npm start"
+  }
+}

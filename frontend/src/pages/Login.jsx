@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Heart } from "lucide-react";
 
@@ -8,49 +11,25 @@ const BG_URL =
   "https://static.prod-images.emergentagent.com/jobs/57dafff3-9277-4df6-9ac8-0567f8fd084f/images/ee4b6ce41eeaac837c5e44926f26547279b9247dc76e6f0bc95ce264069b0e89.png";
 
 export default function Login() {
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const { loginWithGoogle } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    document.body.appendChild(script);
-
-    script.onload = () => {
-      if (window.google) {
-        window.google.accounts.id.initialize({
-          client_id: process.env.REACT_APP_GOOGLE_CLIENT_ID || "",
-          callback: handleGoogleLogin,
-        });
-        window.google.accounts.id.renderButton(
-          document.getElementById("google-signin-btn"),
-          { 
-            theme: "outline", 
-            size: "large", 
-            width: "100%",
-            text: "signin_with",
-            shape: "square"
-          }
-        );
-      }
-    };
-
-    return () => {
-      document.body.removeChild(script);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleGoogleLogin = async (response) => {
+  const handleEmailLogin = async (e) => {
+    e.preventDefault();
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      toast.error("Alamat email tidak boleh kosong");
+      return;
+    }
     setLoading(true);
     try {
-      await loginWithGoogle(response.credential);
+      await login(cleanEmail);
+      toast.success("Berhasil masuk!");
       navigate("/dashboard");
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Gagal masuk menggunakan Akun Google");
+      toast.error(err?.response?.data?.detail || "Gagal masuk. Silakan periksa kembali email Anda.");
     } finally {
       setLoading(false);
     }
@@ -98,17 +77,34 @@ export default function Login() {
             Masuk
           </h2>
           <p className="mt-2 text-sm text-zinc-500 mb-8">
-            Gunakan Akun Google Perusahaan Anda yang telah terdaftar untuk mengakses platform.
+            Masukkan alamat email perusahaan Anda yang telah terdaftar untuk masuk ke platform.
           </p>
 
-          <div className="space-y-4">
-            <div id="google-signin-btn" className="w-full min-h-[44px]" data-testid="google-login-button"></div>
-            {loading && (
-              <div className="text-center text-xs text-zinc-500 animate-pulse mt-2">
-                Memverifikasi akun Google...
-              </div>
-            )}
-          </div>
+          <form onSubmit={handleEmailLogin} className="space-y-4">
+            <div>
+              <Label htmlFor="email" className="text-xs uppercase text-zinc-500 font-semibold tracking-wider">
+                Alamat Email
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="nama@perusahaan.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="rounded-sm mt-1 focus:ring-rose-600 focus:border-rose-600"
+                data-testid="email-input"
+              />
+            </div>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-sm bg-rose-600 hover:bg-rose-700 text-white font-medium shadow-sm transition-colors py-2"
+              data-testid="login-button"
+            >
+              {loading ? "Memverifikasi..." : "Masuk"}
+            </Button>
+          </form>
         </div>
       </div>
     </div>

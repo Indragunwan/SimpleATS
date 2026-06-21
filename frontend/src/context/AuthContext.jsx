@@ -34,8 +34,8 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const login = async (email, password) => {
-    const { data } = await api.post("/auth/login", { email, password });
+  const login = async (email) => {
+    const { data } = await api.post("/auth/login", { email });
     localStorage.setItem("cvs_token", data.access_token);
     localStorage.setItem("cvs_user", JSON.stringify(data.user));
     setUser(data.user);

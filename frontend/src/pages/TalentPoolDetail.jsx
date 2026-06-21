@@ -42,18 +42,45 @@ export default function TalentPoolDetail() {
   let hardSkills = parsed.hard_skills || [];
   let softSkills = parsed.soft_skills || [];
   
-  if (hardSkills.length === 0 && softSkills.length === 0 && parsed.skills) {
+  if (parsed.skills) {
     hardSkills = [];
     softSkills = [];
+    const seenSoft = new Set();
+    const seenHard = new Set();
     parsed.skills.forEach(skill => {
-      const lower = skill.toLowerCase();
-      if (softKeywords.some(kw => lower.includes(kw))) {
-        softSkills.push(skill);
+      let name = "";
+      let isSoft = false;
+      if (typeof skill === "object" && skill !== null) {
+        const skillName = skill.skill_name || "";
+        const lower = skillName.toLowerCase();
+        isSoft = softKeywords.some(kw => lower.includes(kw));
+        
+        const y = skill.years_of_experience ? `${skill.years_of_experience} thn` : "";
+        const p = skill.proficiency_level || "";
+        const details = [y, p].filter(Boolean).join(" · ");
+        name = details ? `${skillName} (${details})` : skillName;
       } else {
-        hardSkills.push(skill);
+        const lower = skill.toLowerCase();
+        isSoft = softKeywords.some(kw => lower.includes(kw));
+        name = skill;
+      }
+      
+      const cleanName = name.trim();
+      const lowerName = cleanName.toLowerCase();
+      if (isSoft) {
+        if (!seenSoft.has(lowerName)) {
+          seenSoft.add(lowerName);
+          softSkills.push(cleanName);
+        }
+      } else {
+        if (!seenHard.has(lowerName)) {
+          seenHard.add(lowerName);
+          hardSkills.push(cleanName);
+        }
       }
     });
   }
+
 
   return (
     <div className="p-10" data-testid="pool-detail-page">
@@ -78,7 +105,7 @@ export default function TalentPoolDetail() {
               <span className="text-xs">· {parsed.years_of_experience || 0} thn pengalaman</span>
               {c.id && (
                 <a
-                  href={`${API}/candidates/${c.id}/cv`}
+                  href={`${API}/candidates/${c.id}/cv?token=${localStorage.getItem("cvs_token") || ""}`}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded border border-indigo-200 transition-colors ml-2"
@@ -164,7 +191,7 @@ export default function TalentPoolDetail() {
                     </div>
                     {w.achievements?.length > 0 && (
                       <ul className="mt-1 text-xs text-zinc-600 list-disc pl-4 space-y-0.5">
-                        {w.achievements.slice(0, 3).map((a, j) => (
+                        {w.achievements.map((a, j) => (
                           <li key={j}>{a}</li>
                         ))}
                       </ul>
@@ -178,17 +205,45 @@ export default function TalentPoolDetail() {
           {parsed.education?.length > 0 && (
             <Section title="Pendidikan">
               <div className="space-y-2">
-                {parsed.education.map((e, i) => (
-                  <div key={i} className="text-sm">
-                    <div className="font-medium">{e.degree}</div>
-                    <div className="text-xs text-zinc-500">
-                      {e.institution} · {e.year}
+                {parsed.education.map((e, i) => {
+                  const degree = e.degree || "";
+                  const major = e.major ? ` - ${e.major}` : "";
+                  const inst = e.institution || "";
+                  const year = e.year ? ` · ${e.year}` : "";
+                  return (
+                    <div key={i} className="text-sm">
+                      <div className="font-medium">{degree}{major}</div>
+                      <div className="text-xs text-zinc-500">
+                        {inst}{year}
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
+
+          {parsed.projects?.length > 0 && (
+            <Section title="Proyek">
+              <div className="space-y-3">
+                {parsed.projects.map((p, i) => (
+                  <div key={i} className="border-l-2 border-zinc-200 pl-3">
+                    <div className="font-medium text-sm">{p.project_name}</div>
+                    {p.tech_stack?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {p.tech_stack.map((t, j) => (
+                          <span key={j} className="text-[10px] px-1.5 py-0.5 bg-zinc-100 text-zinc-600 rounded">
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </Section>
           )}
+
 
           {parsed.certifications?.length > 0 && (
             <Section title="Training atau Sertifikasi">

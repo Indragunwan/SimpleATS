@@ -1,6 +1,70 @@
+Kapso AI WhatsApp
+b1f8d0deab77a637e1338dafe0ad2d46b3a48d73c4782f17c5a788681fde052e
+phone number ID : 597907523413541
+Bussines account id : 2102230076919824
+config id : 492fd92e-c8a9-441a-8acd-464399230933
+6281311307766
+
+/gsd-graphify build
+
+Form figma + lowongan posisi
+cms rubah total, prefix (posisi)
+
+https://ai.sumopod.com/v1
+MiniMax-M2.7-highspeed
+
+https://api.tokenrouter.com/v1
+sk-GEmkBJOvYVUTVmlY5JbfYyiszWTmxCldcd93lmNpWGOQxdHv
+MiniMax-M3
+
+sk-EZG5QfiHzVBEJkq2J_sOWw
+
+pexel.com
+cWLTLNgajGUFBUqEZxhWqK8HN2rNnJTES22p7MunkSi8r2Izs5oXlfGC
+
+deepgram
+https://api.deepgram.com/v1
+895829683d30b0ce73549421daeb8978e2ddccaf
+
+
 Cara Jalanin
 fe_oa_fac3a83cec9e854fa74134f9c2268a10f7dc5407f14251d9
 
+fe_oa_ad25557f7d24ed2366fec8d0c2f561c78733d274087a0ccd
+
+simple ats
+https://api.freemodel.dev/v1
+fe_oa_6e1f632d40f53c8e0cab3cca0c2bdde68cfa8330807e52ac
+
+youtube perbudhi json
+577473051477-ku9j6le34nhnq1g9b0t64v0ser212ghk.apps.googleusercontent.com
+
+embd
+nomic-ai/nomic-embed-text-v1.5-GGUF
+
+https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+qwen3.5-omni-plus
+sk-7f2133b4c6a345d782245bd8e47aff07
+
+const NIM_BASE_URL = "https://integrate.api.nvidia.com/v1";
+const TEXT_MODEL = "nvidia/llama-3.1-nemotron-nano-8b-v1";
+const API_KEY = "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";
+
+
+saya sudah memasukan settingan API Key llm dengan format :
+https://api.freemodel.dev/v1
+api key nya :
+fe_oa_6e1f632d40f53c8e0cab3cca0c2bdde68cfa8330807e52ac
+dan modelnya gpt-5.5
+harusnya model ini aktif dan dapat digunakan, namun kenapa di aplikasi tes koneksi gagal
+
+api browser use 
+bu_6dhI6QU58Kz0-xhG_JL3fXMVpct9lU7ajN-_tlSV1Jk
+
+https://commandcode.ai/Indragunwan/settings/keys
+user_5KRnyZnmRHHN7wcux9tLTBLW5F63kQWR9TSPfxrWZ6k2CJtM7F3sv64jS5TaggF2rDbwMCzVQy7HYFhyPQBpg3Pg
+
+user_5KWjnFRg521RpzJDLzhv82DyE2Nv2AXcjpAkFBofSmgAEYsBdQEByY9SXr2qW7HvnPiDeFG4uV2FXSNWyLWFNvNL
 
 clientid : 136005046073-9nt5ltlkuqne259rb0oqlo5b0tqk7tgk.apps.googleusercontent.com
 Client secret : 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
@@ -8,12 +72,22 @@ Client secret : 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
 sumopod
 sk-5sd5ogL0QJ451Cd7RvuY2w
 
-Backend
- .\.venv\Scripts\Activate.ps1
-python server.py
+Cara Menjalankan Aplikasi:
+1. Jalankan satu perintah di root folder:
+   npm start
+   (atau klik ganda file run.bat)
 
-Frontend
-npm start
+Cara Menjalankan Manual (tanpa virtual env):
+- Backend:
+  cd backend
+  python server.py
+
+- Frontend:
+  cd frontend
+  npm start
+
+pexel
+cWLTLNgajGUFBUqEZxhWqK8HN2rNnJTES22p7MunkSi8r2Izs5oXlfGC
 ____
 Berikut adalah penjelasan yang jauh lebih sederhana, santai, dan **bebas dari istilah teknis/rumus matematika**, khusus dirancang agar mudah dipahami oleh rekan-rekan **Human Resources (HR)**:
 
